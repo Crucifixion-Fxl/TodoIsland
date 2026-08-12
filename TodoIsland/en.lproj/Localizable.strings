@@ -1,0 +1,84 @@
+"app.name" = "Todo Island";
+"about.detail" = "A private, on-device island for your iCloud Reminders.";
+
+"common.ok" = "OK";
+"common.cancel" = "Cancel";
+"common.save" = "Save";
+
+"error.title" = "Something Went Wrong";
+"error.list-not-found" = "The selected reminder list is no longer available.";
+"error.reminder-not-found" = "This reminder is no longer available. Todo Island will refresh the list.";
+"error.empty-title" = "A reminder title cannot be empty.";
+
+"island.locked" = "Reminders access required";
+"island.locked.accessibility" = "Todo Island is locked. Reminders access is required.";
+"island.all-done" = "All Done";
+"island.close" = "Close Todo Island";
+"island.collapsed.accessibility" = "List: %@. %d reminders remaining.";
+
+"list.none" = "No List";
+"list.switch" = "Switch reminder list";
+"list.no-icloud" = "No iCloud Lists";
+"list.no-icloud.detail" = "Create an iCloud reminder list in Reminders, then return to Todo Island.";
+"reminders.remaining" = "%d reminders remaining";
+
+"reminder.complete" = "Complete %@";
+"reminder.recurring" = "Recurring reminder";
+"reminder.edit" = "Edit";
+"reminder.delete" = "Delete";
+"reminder.actions" = "Actions for %@";
+
+"editor.title.placeholder" = "Reminder title";
+"editor.due-date" = "Due";
+"editor.time" = "Time";
+"editor.priority" = "Priority";
+"priority.none" = "None";
+"priority.low" = "Low";
+"priority.medium" = "Medium";
+"priority.high" = "High";
+
+"quick-add.placeholder" = "New reminder";
+"quick-add.accessibility" = "Quick Add reminder title";
+"quick-add.submit" = "Add reminder";
+
+"delete.title" = "Delete this reminder?";
+"delete.confirm" = "Delete";
+
+"all-done.detail" = "There are no pending reminders in this list. Use Quick Add to create one.";
+"date.today" = "Today";
+
+"permission.required" = "Reminders Access Required";
+"permission.required.detail" = "Todo Island needs full Reminders access to display and manage your selected iCloud list.";
+"permission.open-settings" = "Open System Settings";
+"permission.full-access" = "Full Access";
+"permission.not-determined" = "Not Requested";
+"permission.denied" = "Denied";
+"permission.restricted" = "Restricted";
+
+"onboarding.window-title" = "Welcome to Todo Island";
+"onboarding.title" = "Your reminders, right at the notch";
+"onboarding.subtitle" = "A focused island for viewing and managing unfinished iCloud reminders.";
+"onboarding.permission.title" = "Why full Reminders access?";
+"onboarding.permission.detail" = "Apple does not offer read-only Reminders permission. Todo Island uses full access only for the actions you perform.";
+"onboarding.privacy" = "Reminder content stays on this Mac. There is no server, analytics, or content logging.";
+"onboarding.allow" = "Allow Reminders Access";
+"onboarding.continue" = "Start Using Todo Island";
+"onboarding.list" = "Initial List";
+
+"display.notched" = "%@ — Notched";
+
+"settings.title" = "Todo Island Settings";
+"settings.reminders" = "Reminders";
+"settings.permission" = "Permission";
+"settings.island" = "Island";
+"settings.display" = "Selected Display";
+"settings.fullscreen" = "Full Screen";
+"settings.fullscreen.policy" = "Keep on notched displays; hide fallback capsule";
+"settings.launch-at-login" = "Launch at Login";
+"settings.about" = "About";
+"settings.privacy" = "Todo Island processes Reminder content only on this Mac.";
+
+"menu.open" = "Open Todo Island";
+"menu.settings" = "Settings…";
+"menu.about" = "About Todo Island";
+"menu.quit" = "Quit Todo Island";

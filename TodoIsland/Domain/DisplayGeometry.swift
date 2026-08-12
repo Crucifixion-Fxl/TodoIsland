@@ -1,0 +1,76 @@
+import CoreGraphics
+
+struct DisplayMetrics: Equatable, Sendable {
+  let frame: CGRect
+  let visibleFrame: CGRect
+  let safeAreaTop: CGFloat
+  let auxiliaryLeftWidth: CGFloat?
+  let auxiliaryRightWidth: CGFloat?
+
+  var hasPhysicalNotch: Bool { safeAreaTop > 0 }
+
+  var physicalNotchWidth: CGFloat {
+    guard
+      hasPhysicalNotch,
+      let auxiliaryLeftWidth,
+      let auxiliaryRightWidth
+    else { return 200 }
+
+    return max(180, frame.width - auxiliaryLeftWidth - auxiliaryRightWidth + 4)
+  }
+}
+
+struct IslandGeometry: Equatable, Sendable {
+  let collapsedSize: CGSize
+  let previewSize: CGSize
+  let expandedSize: CGSize
+
+  func size(for state: IslandPresentationState) -> CGSize {
+    switch state {
+    case .collapsed:
+      collapsedSize
+    case .preview:
+      previewSize
+    case .pinned:
+      expandedSize
+    }
+  }
+
+  func origin(for state: IslandPresentationState, in display: DisplayMetrics) -> CGPoint {
+    let size = size(for: state)
+    return CGPoint(x: display.frame.midX - size.width / 2, y: display.frame.maxY - size.height)
+  }
+}
+
+enum IslandAnimatedSurfaceLayout {
+  static func surfaceSize(windowSize: CGSize, targetSize _: CGSize) -> CGSize {
+    windowSize
+  }
+}
+
+enum DisplayGeometryCalculator {
+  static func geometry(for display: DisplayMetrics) -> IslandGeometry {
+    let availableWidth = max(320, display.frame.width - 32)
+    let expanded = CGSize(
+      width: min(480, availableWidth), height: min(360, max(260, display.frame.height - 80)))
+    let preview = CGSize(
+      width: min(440, availableWidth), height: min(220, max(180, display.frame.height - 80)))
+
+    let collapsedHeight: CGFloat
+    if display.hasPhysicalNotch {
+      collapsedHeight = max(28, display.safeAreaTop)
+    } else {
+      collapsedHeight = max(30, display.frame.maxY - display.visibleFrame.maxY)
+    }
+
+    let collapsedWidth =
+      display.hasPhysicalNotch
+      ? min(display.physicalNotchWidth + 112, availableWidth)
+      : min(340, availableWidth)
+    return IslandGeometry(
+      collapsedSize: CGSize(width: collapsedWidth, height: collapsedHeight),
+      previewSize: preview,
+      expandedSize: expanded
+    )
+  }
+}

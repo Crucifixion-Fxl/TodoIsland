@@ -1,0 +1,84 @@
+"app.name" = "Todo Island";
+"about.detail" = "只在本机处理 iCloud 提醒事项的灵动岛工具。";
+
+"common.ok" = "好";
+"common.cancel" = "取消";
+"common.save" = "保存";
+
+"error.title" = "出现问题";
+"error.list-not-found" = "所选提醒事项列表已不可用。";
+"error.reminder-not-found" = "该提醒事项已不可用，Todo Island 将刷新列表。";
+"error.empty-title" = "提醒事项标题不能为空。";
+
+"island.locked" = "需要提醒事项权限";
+"island.locked.accessibility" = "Todo Island 已锁定，需要提醒事项权限。";
+"island.all-done" = "全部完成";
+"island.close" = "关闭 Todo Island";
+"island.collapsed.accessibility" = "列表：%@。还有 %d 项未完成。";
+
+"list.none" = "没有列表";
+"list.switch" = "切换提醒事项列表";
+"list.no-icloud" = "没有 iCloud 列表";
+"list.no-icloud.detail" = "请先在提醒事项中创建 iCloud 列表，然后返回 Todo Island。";
+"reminders.remaining" = "还有 %d 项";
+
+"reminder.complete" = "完成 %@";
+"reminder.recurring" = "重复提醒事项";
+"reminder.edit" = "编辑";
+"reminder.delete" = "删除";
+"reminder.actions" = "%@ 的操作";
+
+"editor.title.placeholder" = "提醒事项标题";
+"editor.due-date" = "到期";
+"editor.time" = "时间";
+"editor.priority" = "优先级";
+"priority.none" = "无";
+"priority.low" = "低";
+"priority.medium" = "中";
+"priority.high" = "高";
+
+"quick-add.placeholder" = "新提醒事项";
+"quick-add.accessibility" = "快速添加提醒事项标题";
+"quick-add.submit" = "添加提醒事项";
+
+"delete.title" = "删除这个提醒事项？";
+"delete.confirm" = "删除";
+
+"all-done.detail" = "这个列表没有未完成事项，可使用快速添加创建一项。";
+"date.today" = "今天";
+
+"permission.required" = "需要提醒事项权限";
+"permission.required.detail" = "Todo Island 需要完整权限来显示和管理所选 iCloud 列表。";
+"permission.open-settings" = "打开系统设置";
+"permission.full-access" = "完整访问";
+"permission.not-determined" = "尚未请求";
+"permission.denied" = "已拒绝";
+"permission.restricted" = "受限制";
+
+"onboarding.window-title" = "欢迎使用 Todo Island";
+"onboarding.title" = "让提醒事项待在刘海旁";
+"onboarding.subtitle" = "一个用于查看和管理未完成 iCloud 提醒事项的专注空间。";
+"onboarding.permission.title" = "为什么需要完整权限？";
+"onboarding.permission.detail" = "Apple 没有提供只读提醒事项权限。Todo Island 只会为你执行的操作使用完整权限。";
+"onboarding.privacy" = "提醒事项内容只留在这台 Mac 上，不使用服务器、分析服务或内容日志。";
+"onboarding.allow" = "允许访问提醒事项";
+"onboarding.continue" = "开始使用 Todo Island";
+"onboarding.list" = "初始列表";
+
+"display.notched" = "%@ — 带刘海";
+
+"settings.title" = "Todo Island 设置";
+"settings.reminders" = "提醒事项";
+"settings.permission" = "权限";
+"settings.island" = "灵动岛";
+"settings.display" = "显示屏";
+"settings.fullscreen" = "全屏";
+"settings.fullscreen.policy" = "刘海屏保留，无刘海胶囊隐藏";
+"settings.launch-at-login" = "登录时启动";
+"settings.about" = "关于";
+"settings.privacy" = "Todo Island 只在这台 Mac 上处理提醒事项内容。";
+
+"menu.open" = "打开 Todo Island";
+"menu.settings" = "设置…";
+"menu.about" = "关于 Todo Island";
+"menu.quit" = "退出 Todo Island";
