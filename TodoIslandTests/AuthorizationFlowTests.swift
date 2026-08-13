@@ -22,6 +22,61 @@ final class AuthorizationFlowTests: XCTestCase {
   }
 
   @MainActor
+  func testInitialAuthorizationInterfaceCollapsesWhenApplicationResignsActive() {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(
+      store: AuthorizationFlowReminderStore(authorization: .notDetermined),
+      defaults: defaults
+    )
+    let controller = IslandWindowController(model: model)
+
+    NotificationCenter.default.post(
+      name: NSApplication.didResignActiveNotification,
+      object: NSApp
+    )
+
+    XCTAssertEqual(model.islandState, .collapsed)
+    XCTAssertEqual(controller.appliedState, .collapsed)
+  }
+
+  func testAuthorizationActionsAreVisibleInExpandedStates() {
+    XCTAssertFalse(IslandPresentationState.collapsed.showsAuthorizationActions)
+    XCTAssertTrue(IslandPresentationState.preview.showsAuthorizationActions)
+    XCTAssertTrue(IslandPresentationState.pinned.showsAuthorizationActions)
+  }
+
+  @MainActor
+  func testUnauthorizedHeaderUsesLockInsteadOfNoListLabel() {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(
+      store: AuthorizationFlowReminderStore(authorization: .notDetermined),
+      defaults: defaults
+    )
+
+    XCTAssertTrue(model.shouldShowAuthorizationLockInHeader)
+  }
+
+  @MainActor
+  func testAuthorizedEmptyHeaderKeepsNoListPresentation() {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(
+      store: AuthorizationFlowReminderStore(authorization: .fullAccess),
+      defaults: defaults
+    )
+
+    XCTAssertFalse(model.shouldShowAuthorizationLockInHeader)
+  }
+
+  @MainActor
   func testSuccessfulAuthorizationKeepsIslandPinnedAndLoadsFirstList() async {
     let defaults = UserDefaults(suiteName: #function)!
     defaults.removePersistentDomain(forName: #function)

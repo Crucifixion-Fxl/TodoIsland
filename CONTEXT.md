@@ -53,7 +53,7 @@ The expanded Island shown while the pointer hovers over its collapsed surface. I
 _Avoid_: Hover mode, passive popup
 
 **Pinned Island**:
-The expanded, interactive Island entered by clicking it. It takes keyboard focus and remains open while the user creates or manages Reminders.
+The expanded, interactive Island entered by clicking it. It takes keyboard focus and collapses 200 milliseconds after the pointer leaves an Active List. An unfinished Quick Add or Reminder edit is preserved, and returning the pointer reopens the Pinned Island with its editing focus restored.
 _Avoid_: Focused popup
 
 **Locked iCloud Source**:

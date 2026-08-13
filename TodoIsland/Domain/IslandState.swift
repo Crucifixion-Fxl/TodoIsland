@@ -9,12 +9,18 @@ enum IslandPresentationState: Equatable, Sendable {
     self != .collapsed
   }
 
+  var showsAuthorizationActions: Bool {
+    self != .collapsed
+  }
+
   var motionProfile: IslandMotionProfile {
     switch self {
     case .collapsed:
       .closing
-    case .preview, .pinned:
+    case .preview:
       .opening
+    case .pinned:
+      .pinning
     }
   }
 }
@@ -23,8 +29,9 @@ struct IslandMotionProfile: Equatable, Sendable {
   let response: Double
   let dampingFraction: Double
 
-  static let opening = IslandMotionProfile(response: 0.42, dampingFraction: 0.8)
-  static let closing = IslandMotionProfile(response: 0.45, dampingFraction: 1.0)
+  static let opening = IslandMotionProfile(response: 0.34, dampingFraction: 0.96)
+  static let pinning = IslandMotionProfile(response: 0.26, dampingFraction: 0.98)
+  static let closing = IslandMotionProfile(response: 0.30, dampingFraction: 1.0)
 }
 
 struct IslandStateMachine: Equatable, Sendable {

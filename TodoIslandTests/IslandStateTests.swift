@@ -3,18 +3,18 @@ import XCTest
 @testable import TodoIsland
 
 final class IslandStateTests: XCTestCase {
-  func testMotionProfilesUseSpringyOpenAndSettledClose() {
+  func testMotionProfilesUseSmoothStateSpecificTiming() {
     XCTAssertEqual(
       IslandPresentationState.preview.motionProfile,
-      IslandMotionProfile(response: 0.42, dampingFraction: 0.8)
+      IslandMotionProfile(response: 0.34, dampingFraction: 0.96)
     )
     XCTAssertEqual(
       IslandPresentationState.pinned.motionProfile,
-      IslandMotionProfile(response: 0.42, dampingFraction: 0.8)
+      IslandMotionProfile(response: 0.26, dampingFraction: 0.98)
     )
     XCTAssertEqual(
       IslandPresentationState.collapsed.motionProfile,
-      IslandMotionProfile(response: 0.45, dampingFraction: 1.0)
+      IslandMotionProfile(response: 0.30, dampingFraction: 1.0)
     )
   }
 
@@ -105,7 +105,7 @@ final class IslandStateTests: XCTestCase {
   }
 
   @MainActor
-  func testEmptyPinnedIslandCollapsesAfterPointerLeaves() async throws {
+  func testPinnedIslandCollapsesTwoHundredMillisecondsAfterPointerLeaves() async throws {
     let defaults = UserDefaults(suiteName: #function)!
     defaults.removePersistentDomain(forName: #function)
     defer { defaults.removePersistentDomain(forName: #function) }
@@ -118,13 +118,36 @@ final class IslandStateTests: XCTestCase {
     model.setIslandHovered(true)
     model.setIslandHovered(false)
 
-    try await Task.sleep(for: .milliseconds(600))
+    try await Task.sleep(for: .milliseconds(120))
+    XCTAssertEqual(model.islandState, .pinned)
 
+    try await Task.sleep(for: .milliseconds(140))
     XCTAssertEqual(model.islandState, .collapsed)
   }
 
   @MainActor
-  func testEmptyPinnedIslandStaysOpenWhileQuickAddIsActive() async throws {
+  func testPinnedIslandCancelsCollapseWhenPointerReturnsWithinTwoHundredMilliseconds()
+    async throws
+  {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(store: ListSelectionTestReminderStore(), defaults: defaults)
+    await model.start()
+    model.pinIsland()
+    model.setIslandHovered(true)
+    model.setIslandHovered(false)
+
+    try await Task.sleep(for: .milliseconds(100))
+    model.setIslandHovered(true)
+    try await Task.sleep(for: .milliseconds(180))
+
+    XCTAssertEqual(model.islandState, .pinned)
+  }
+
+  @MainActor
+  func testQuickAddDraftSurvivesAutoCollapseAndResumesWhenPointerReturns() async throws {
     let defaults = UserDefaults(suiteName: #function)!
     defaults.removePersistentDomain(forName: #function)
     defer { defaults.removePersistentDomain(forName: #function) }
@@ -133,31 +156,82 @@ final class IslandStateTests: XCTestCase {
     await model.start()
     model.pinIsland()
     model.setQuickAddActive(true)
+    model.quickAddTitle = "Keep this draft"
+    let focusRequestBeforeCollapse = model.quickAddFocusRequestID
     model.setIslandHovered(true)
     model.setIslandHovered(false)
 
-    try await Task.sleep(for: .milliseconds(600))
+    try await Task.sleep(for: .milliseconds(260))
+
+    XCTAssertEqual(model.islandState, .collapsed)
+    XCTAssertEqual(model.quickAddTitle, "Keep this draft")
+
+    model.setIslandHovered(true)
 
     XCTAssertEqual(model.islandState, .pinned)
+    XCTAssertNotEqual(model.quickAddFocusRequestID, focusRequestBeforeCollapse)
   }
 
   @MainActor
-  func testEmptyPinnedIslandStaysOpenWhenQuickAddContainsADraft() async throws {
+  func testSubmittedQuickAddDoesNotResumeEditingWhenPointerReturns() async throws {
     let defaults = UserDefaults(suiteName: #function)!
     defaults.removePersistentDomain(forName: #function)
     defer { defaults.removePersistentDomain(forName: #function) }
 
-    let model = AppModel(store: ListSelectionTestReminderStore(), defaults: defaults)
+    let model = AppModel(store: QuickAddTestReminderStore(), defaults: defaults)
     await model.start()
     model.pinIsland()
-    model.quickAddTitle = "Keep this draft"
+    model.setQuickAddActive(true)
+    model.quickAddTitle = "Finished reminder"
+    model.createQuickReminder()
+    model.setQuickAddActive(false)
+    try await Task.sleep(for: .milliseconds(60))
+    let focusRequestAfterSubmission = model.quickAddFocusRequestID
+
+    model.setIslandHovered(true)
+    model.setIslandHovered(false)
+    try await Task.sleep(for: .milliseconds(260))
+
+    XCTAssertEqual(model.islandState, .collapsed)
+    XCTAssertEqual(model.quickAddTitle, "")
+
+    model.setIslandHovered(true)
+
+    XCTAssertEqual(model.islandState, .collapsed)
+    XCTAssertEqual(model.quickAddFocusRequestID, focusRequestAfterSubmission)
+
+    try await Task.sleep(for: .milliseconds(240))
+    XCTAssertEqual(model.islandState, .preview)
+  }
+
+  @MainActor
+  func testReminderDraftSurvivesAutoCollapseAndResumesWhenPointerReturns() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(store: CompletionFeedbackTestReminderStore(), defaults: defaults)
+    await model.start()
+    let reminder = try XCTUnwrap(model.reminders.first)
+    model.pinIsland()
+    model.beginEditing(reminder)
+    model.draft?.title = "Continue editing"
+    let focusRequestBeforeCollapse = model.editingFocusRequestID
     model.setIslandHovered(true)
     model.setIslandHovered(false)
 
-    try await Task.sleep(for: .milliseconds(600))
+    try await Task.sleep(for: .milliseconds(260))
+
+    XCTAssertEqual(model.islandState, .collapsed)
+    XCTAssertEqual(model.editingReminderID, reminder.id)
+    XCTAssertEqual(model.draft?.title, "Continue editing")
+
+    model.setIslandHovered(true)
 
     XCTAssertEqual(model.islandState, .pinned)
-    XCTAssertEqual(model.quickAddTitle, "Keep this draft")
+    XCTAssertEqual(model.editingReminderID, reminder.id)
+    XCTAssertEqual(model.draft?.title, "Continue editing")
+    XCTAssertNotEqual(model.editingFocusRequestID, focusRequestBeforeCollapse)
   }
 
   @MainActor
@@ -196,7 +270,7 @@ final class IslandStateTests: XCTestCase {
   }
 
   @MainActor
-  func testCompletingLastReminderCollapsesAfterPointerHasLeft() async throws {
+  func testCompletingLastReminderAllowsPinnedIslandToAutoCollapse() async throws {
     let defaults = UserDefaults(suiteName: #function)!
     defaults.removePersistentDomain(forName: #function)
     defer { defaults.removePersistentDomain(forName: #function) }

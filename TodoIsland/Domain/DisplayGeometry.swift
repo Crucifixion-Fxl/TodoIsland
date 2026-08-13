@@ -54,7 +54,7 @@ enum DisplayGeometryCalculator {
     let expanded = CGSize(
       width: min(480, availableWidth), height: min(360, max(260, display.frame.height - 80)))
     let preview = CGSize(
-      width: min(440, availableWidth), height: min(220, max(180, display.frame.height - 80)))
+      width: min(440, availableWidth), height: min(260, max(180, display.frame.height - 80)))
 
     let collapsedHeight: CGFloat
     if display.hasPhysicalNotch {

@@ -1,6 +1,15 @@
 import AppKit
 import SwiftUI
 
+enum ListCreationDraftPolicy {
+  static func shouldResetName(
+    previousSource: ReminderSource?,
+    newSource: ReminderSource?
+  ) -> Bool {
+    previousSource == nil && newSource != nil
+  }
+}
+
 struct IslandRootView: View {
   @EnvironmentObject private var model: AppModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -21,11 +30,15 @@ struct IslandRootView: View {
         targetSize: islandSurfaceSize
       )
 
-      Group {
+      ZStack(alignment: .top) {
         if model.islandState == .collapsed {
           collapsedContent
+            .transition(.opacity)
         } else {
           expandedContent
+            .transition(
+              .opacity.combined(with: .scale(scale: 0.985, anchor: .top))
+            )
         }
       }
       .frame(width: surfaceSize.width, height: surfaceSize.height, alignment: .top)
@@ -43,6 +56,7 @@ struct IslandRootView: View {
         if !isPinned { model.pinIsland() }
       }
       .background(KeyboardEventMonitor(handler: handleKeyEvent))
+      .animation(surfaceAnimation, value: model.islandState)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .confirmationDialog(
         L10n.text("delete.title"),
@@ -68,8 +82,10 @@ struct IslandRootView: View {
           set: { if !$0 { model.cancelListDeletion() } }
         )
       ) {
-        Button(L10n.text("list.delete.confirm"), role: .destructive) {
-          Task { await model.confirmListDeletion() }
+        if let candidate = model.listDeletionCandidate {
+          Button(L10n.text("list.delete.confirm"), role: .destructive) {
+            Task { await model.confirmListDeletion(candidate) }
+          }
         }
         Button(L10n.text("common.cancel"), role: .cancel) {
           model.cancelListDeletion()
@@ -105,15 +121,24 @@ struct IslandRootView: View {
       .onChange(of: model.quickAddFocusRequestID) { _, _ in
         Task { @MainActor in quickAddFocused = true }
       }
-      .onChange(of: model.requestedListCreationSource) { _, source in
+      .onChange(of: model.editingFocusRequestID) { _, _ in
+        Task { @MainActor in editorTitleFocused = true }
+      }
+      .onChange(of: model.requestedListCreationSource) { previousSource, source in
         guard source != nil else { return }
         listPendingRename = nil
-        listNameDraft = ""
+        if ListCreationDraftPolicy.shouldResetName(
+          previousSource: previousSource,
+          newSource: source
+        ) {
+          listNameDraft = ""
+        }
         Task { @MainActor in listNameFocused = true }
       }
       .onChange(of: model.islandState) { _, state in
         if state == .collapsed {
           quickAddFocused = false
+          editorTitleFocused = false
           return
         }
         guard state == .pinned, focusQuickAddAfterPinning else { return }
@@ -157,15 +182,18 @@ struct IslandRootView: View {
       .accessibilityLabel(
         Text(model.authorization == .fullAccess ? "list.none" : "island.locked.accessibility"))
     } else if hostDisplayHasNotch {
-      HStack(spacing: 0) {
-        HStack(spacing: 4) {
+      HStack(alignment: .center, spacing: 0) {
+        HStack(alignment: .center, spacing: 4) {
           sourceGlyph
+            .frame(width: 18, height: 18, alignment: .center)
           Text(model.activeList?.title ?? L10n.text("list.none"))
             .lineLimit(1)
             .minimumScaleFactor(0.72)
+            .frame(height: 18, alignment: .center)
         }
         .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(.white)
+        .frame(height: 18, alignment: .center)
         .frame(width: collapsedSideContentWidth, alignment: .leading)
         .padding(.leading, collapsedOuterInset)
 
@@ -176,22 +204,24 @@ struct IslandRootView: View {
           .frame(width: collapsedSideContentWidth, alignment: .trailing)
           .padding(.trailing, collapsedOuterInset)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       .accessibilityElement(children: .combine)
       .accessibilityLabel(collapsedAccessibilityLabel)
     } else {
-      HStack(spacing: 8) {
+      HStack(alignment: .center, spacing: 8) {
         sourceGlyph
+          .frame(width: 18, height: 18, alignment: .center)
         Text(model.activeList?.title ?? L10n.text("list.none"))
           .lineLimit(1)
           .truncationMode(.tail)
+          .frame(height: 18, alignment: .center)
         Spacer(minLength: 4)
         remainingCountRing
       }
       .font(.system(size: 12, weight: .semibold))
       .foregroundStyle(.white)
       .padding(.horizontal, 14)
-      .frame(maxHeight: .infinity)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       .accessibilityElement(children: .combine)
       .accessibilityLabel(collapsedAccessibilityLabel)
     }
@@ -237,10 +267,38 @@ struct IslandRootView: View {
   private var header: some View {
     HStack(spacing: 10) {
       Menu {
-        if !model.iCloudLists.isEmpty {
-          Section(L10n.text("source.icloud")) {
+        Section(L10n.text("source.icloud")) {
+          switch model.iCloudSourceMenuState {
+          case .available:
             ForEach(model.iCloudLists) { list in
               listSelectionButton(list)
+            }
+          case .authorizationRequired:
+            Button {
+              restoreICloudAccess()
+            } label: {
+              Label(
+                L10n.text(
+                  model.authorization == .notDetermined
+                    ? "permission.allow" : "permission.open-settings"),
+                systemImage: "lock.open"
+              )
+            }
+          case .empty:
+            Button {
+              model.requestNewList(source: .iCloud)
+            } label: {
+              Label(L10n.text("list.new-icloud"), systemImage: "plus")
+            }
+            Button {
+              Task { await model.reload() }
+            } label: {
+              Label(L10n.text("list.check-again"), systemImage: "arrow.clockwise")
+            }
+            Button {
+              SystemSettings.openReminders()
+            } label: {
+              Label(L10n.text("list.open-reminders"), systemImage: "list.bullet")
             }
           }
         }
@@ -288,17 +346,24 @@ struct IslandRootView: View {
       } label: {
         HStack(spacing: 7) {
           Circle().fill(accentColor).frame(width: 8, height: 8)
-          if let activeList = model.activeList {
+          if model.shouldShowAuthorizationLockInHeader {
+            Image(systemName: "lock.fill")
+              .font(.headline)
+          } else if let activeList = model.activeList {
             Image(systemName: activeList.source.symbolName)
               .font(.caption)
               .foregroundStyle(.secondary)
           }
-          Text(model.activeList?.title ?? L10n.text("list.none"))
-            .font(.headline)
-            .lineLimit(1)
-          Image(systemName: "chevron.down")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+          if !model.shouldShowAuthorizationLockInHeader {
+            Text(model.activeList?.title ?? L10n.text("list.none"))
+              .font(.headline)
+              .lineLimit(1)
+          }
+          if !model.shouldShowAuthorizationLockInHeader {
+            Image(systemName: "chevron.down")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
         }
       }
       .menuStyle(.borderlessButton)
@@ -310,22 +375,12 @@ struct IslandRootView: View {
         ProgressView().controlSize(.small)
       } else if model.canUseActiveList {
         Text("\(model.remainingCount)")
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(.secondary)
+          .font(.system(size: 16, weight: .semibold, design: .monospaced))
+          .foregroundStyle(accentColor)
           .accessibilityLabel(
             Text(String(format: L10n.text("reminders.remaining"), model.remainingCount)))
       }
 
-      if isPinned {
-        Button {
-          model.collapseIsland()
-        } label: {
-          Image(systemName: "xmark.circle.fill")
-            .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("island.close"))
-      }
     }
     .frame(height: 30)
   }
@@ -343,6 +398,14 @@ struct IslandRootView: View {
     .disabled(list.source == .iCloud && model.authorization != .fullAccess)
   }
 
+  private func restoreICloudAccess() {
+    if model.authorization == .notDetermined {
+      Task { await model.requestAccess() }
+    } else {
+      SystemSettings.openRemindersPrivacy()
+    }
+  }
+
   @ViewBuilder
   private var reminderContent: some View {
     if model.lists.isEmpty {
@@ -356,6 +419,7 @@ struct IslandRootView: View {
             ForEach(model.reminders) { reminder in
               reminderRow(reminder)
                 .id(reminder.id)
+                .transition(.opacity.combined(with: .move(edge: .top)))
               if model.editingReminderID == reminder.id, let draft = model.draft {
                 reminderEditor(draft)
                   .transition(.opacity.combined(with: .move(edge: .top)))
@@ -363,6 +427,10 @@ struct IslandRootView: View {
             }
           }
           .padding(.vertical, 8)
+          .animation(
+            reduceMotion ? nil : .smooth(duration: 0.26, extraBounce: 0),
+            value: model.reminders.map(\.id)
+          )
         }
         .onChange(of: model.selectedReminderID) { _, id in
           guard let id else { return }
@@ -441,6 +509,10 @@ struct IslandRootView: View {
           model.selectedReminderID == reminder.id
             ? accentColor.opacity(0.18) : .white.opacity(0.045))
     }
+    .animation(
+      reduceMotion ? nil : .smooth(duration: 0.18, extraBounce: 0),
+      value: model.selectedReminderID == reminder.id
+    )
     .contentShape(Rectangle())
     .onTapGesture {
       guard isPinned else { return }
@@ -454,77 +526,199 @@ struct IslandRootView: View {
   }
 
   private func reminderEditor(_ draft: ReminderDraft) -> some View {
-    VStack(spacing: 10) {
-      TextField(
-        L10n.text("editor.title.placeholder"),
-        text: Binding(
-          get: { model.draft?.title ?? "" },
-          set: { model.draft?.title = $0 }
-        )
-      )
-      .textFieldStyle(.roundedBorder)
-      .focused($editorTitleFocused)
-      .onSubmit { model.saveEditing() }
+    VStack(alignment: .leading, spacing: 11) {
+      HStack(spacing: 8) {
+        ZStack {
+          Circle().fill(accentColor.opacity(0.18))
+          Image(systemName: "pencil")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(accentColor)
+        }
+        .frame(width: 28, height: 28)
 
-      HStack(spacing: 12) {
-        Toggle(
-          L10n.text("editor.due-date"),
-          isOn: Binding(
-            get: { model.draft?.hasDueDate ?? false },
-            set: { model.draft?.hasDueDate = $0 }
+        Text("editor.edit-reminder")
+          .font(.subheadline.weight(.semibold))
+
+        Spacer()
+      }
+
+      HStack(spacing: 9) {
+        Image(systemName: "text.cursor")
+          .font(.caption)
+          .foregroundStyle(editorTitleFocused ? accentColor : .secondary)
+        TextField(
+          L10n.text("editor.title.placeholder"),
+          text: Binding(
+            get: { model.draft?.title ?? "" },
+            set: { model.draft?.title = $0 }
           )
         )
-        .toggleStyle(.switch)
-        .controlSize(.small)
-
-        if model.draft?.hasDueDate == true {
-          DatePicker(
-            "",
-            selection: Binding(
-              get: { model.draft?.dueDate ?? Date() },
-              set: { model.draft?.dueDate = $0 }
-            ),
-            displayedComponents: model.draft?.includesTime == true
-              ? [.date, .hourAndMinute] : [.date]
+        .textFieldStyle(.plain)
+        .focused($editorTitleFocused)
+        .onSubmit { model.saveEditing() }
+      }
+      .padding(.horizontal, 11)
+      .frame(height: 38)
+      .background {
+        RoundedRectangle(cornerRadius: 10)
+          .fill(.white.opacity(editorTitleFocused ? 0.09 : 0.06))
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: 10)
+          .stroke(
+            editorTitleFocused ? accentColor.opacity(0.75) : .white.opacity(0.09),
+            lineWidth: editorTitleFocused ? 1.25 : 1
           )
-          .labelsHidden()
-          .controlSize(.small)
+      }
+
+      VStack(spacing: 8) {
+        HStack(spacing: 10) {
+          ZStack {
+            RoundedRectangle(cornerRadius: 8)
+              .fill(draft.hasDueDate ? accentColor.opacity(0.18) : .white.opacity(0.06))
+            Image(systemName: "calendar")
+              .font(.system(size: 13, weight: .medium))
+              .foregroundStyle(draft.hasDueDate ? accentColor : .secondary)
+          }
+          .frame(width: 30, height: 30)
+
+          Text("editor.due-date")
+            .font(.subheadline.weight(.medium))
+
+          Spacer()
 
           Toggle(
-            L10n.text("editor.time"),
+            "",
             isOn: Binding(
-              get: { model.draft?.includesTime ?? false },
-              set: { model.draft?.includesTime = $0 }
+              get: { model.draft?.hasDueDate ?? false },
+              set: { model.draft?.hasDueDate = $0 }
             )
           )
-          .toggleStyle(.checkbox)
+          .labelsHidden()
+          .toggleStyle(.switch)
           .controlSize(.small)
+          .tint(accentColor)
+        }
+
+        if draft.hasDueDate {
+          Divider().overlay(.white.opacity(0.08))
+
+          HStack(spacing: 10) {
+            DatePicker(
+              "",
+              selection: Binding(
+                get: { model.draft?.dueDate ?? Date() },
+                set: { model.draft?.dueDate = $0 }
+              ),
+              displayedComponents: draft.includesTime
+                ? [.date, .hourAndMinute] : [.date]
+            )
+            .labelsHidden()
+            .controlSize(.small)
+
+            Spacer()
+
+            Toggle(
+              L10n.text("editor.time"),
+              isOn: Binding(
+                get: { model.draft?.includesTime ?? false },
+                set: { model.draft?.includesTime = $0 }
+              )
+            )
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+          }
+          .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+      .background {
+        RoundedRectangle(cornerRadius: 11).fill(.white.opacity(0.04))
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: 11).stroke(.white.opacity(0.08), lineWidth: 1)
+      }
+      .animation(
+        reduceMotion ? nil : .smooth(duration: 0.22, extraBounce: 0),
+        value: draft.hasDueDate
+      )
+
+      HStack(spacing: 9) {
+        Label(L10n.text("editor.priority"), systemImage: "flag")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+
+        HStack(spacing: 6) {
+          ForEach(
+            [ReminderPriority.none, .low, .medium, .high],
+            id: \.self
+          ) { priority in
+            priorityOption(priority, selectedPriority: draft.priority)
+          }
         }
       }
 
-      HStack {
-        Picker(
-          L10n.text("editor.priority"),
-          selection: Binding(
-            get: { model.draft?.priority ?? .none },
-            set: { model.draft?.priority = $0 }
-          )
-        ) {
-          Text("priority.none").tag(ReminderPriority.none)
-          Text("priority.low").tag(ReminderPriority.low)
-          Text("priority.medium").tag(ReminderPriority.medium)
-          Text("priority.high").tag(ReminderPriority.high)
-        }
-        .pickerStyle(.segmented)
-
+      HStack(spacing: 9) {
+        Spacer()
         Button(L10n.text("common.cancel")) { model.cancelEditing() }
+          .buttonStyle(.bordered)
+          .controlSize(.regular)
+
         Button(L10n.text("common.save")) { model.saveEditing() }
+          .buttonStyle(.borderedProminent)
+          .controlSize(.regular)
+          .tint(accentColor)
           .keyboardShortcut(.defaultAction)
           .disabled(!model.canSaveEditingDraft)
       }
     }
-    .padding(10)
-    .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.08)))
+    .padding(13)
+    .background {
+      RoundedRectangle(cornerRadius: 14)
+        .fill(.white.opacity(0.055))
+    }
+    .overlay {
+      RoundedRectangle(cornerRadius: 14)
+        .stroke(accentColor.opacity(0.24), lineWidth: 1)
+    }
+  }
+
+  private func priorityOption(
+    _ priority: ReminderPriority,
+    selectedPriority: ReminderPriority
+  ) -> some View {
+    let isSelected = priority == selectedPriority
+    let color = priority == .none ? accentColor : priorityColor(priority)
+    let symbol = priority == .none ? "minus" : prioritySymbol(priority)
+
+    return Button {
+      model.draft?.priority = priority
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: symbol)
+          .font(.system(size: 9, weight: .bold))
+        priorityLabel(priority)
+          .font(.caption.weight(.medium))
+      }
+      .foregroundStyle(isSelected ? color : .secondary)
+      .frame(maxWidth: .infinity)
+      .frame(height: 28)
+      .background {
+        RoundedRectangle(cornerRadius: 8)
+          .fill(isSelected ? color.opacity(0.16) : .white.opacity(0.035))
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: 8)
+          .stroke(isSelected ? color.opacity(0.65) : .white.opacity(0.07), lineWidth: 1)
+      }
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .animation(
+      reduceMotion ? nil : .smooth(duration: 0.18, extraBounce: 0),
+      value: isSelected
+    )
   }
 
   private var quickAdd: some View {
@@ -534,10 +728,10 @@ struct IslandRootView: View {
       TextField("quick-add.placeholder", text: $model.quickAddTitle)
         .textFieldStyle(.plain)
         .focused($quickAddFocused)
-        .onSubmit { model.createQuickReminder() }
+        .onSubmit { submitQuickAdd() }
         .accessibilityLabel(Text("quick-add.accessibility"))
       Button {
-        model.createQuickReminder()
+        submitQuickAdd()
       } label: {
         Image(systemName: "arrow.up.circle.fill")
       }
@@ -555,6 +749,12 @@ struct IslandRootView: View {
         focusQuickAdd()
       }
     )
+  }
+
+  private func submitQuickAdd() {
+    model.createQuickReminder()
+    model.setQuickAddActive(false)
+    quickAddFocused = false
   }
 
   private var allDoneContent: some View {
@@ -588,39 +788,87 @@ struct IslandRootView: View {
   }
 
   private var listCreationForm: some View {
-    VStack(spacing: 14) {
-      Label(L10n.text("list.new"), systemImage: "list.bullet.badge.plus")
-        .font(.headline)
+    VStack(alignment: .leading, spacing: 13) {
+      HStack(spacing: 11) {
+        ZStack {
+          Circle().fill(accentColor.opacity(0.18))
+          Image(systemName: "list.bullet.badge.plus")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(accentColor)
+        }
+        .frame(width: 36, height: 36)
 
-      TextField(L10n.text("list.name.placeholder"), text: $listNameDraft)
-        .textFieldStyle(.roundedBorder)
-        .focused($listNameFocused)
-        .onSubmit { createListFromForm() }
-
-      Picker(
-        L10n.text("list.source"),
-        selection: Binding(
-          get: { model.requestedListCreationSource ?? .iCloud },
-          set: { model.requestedListCreationSource = $0 }
-        )
-      ) {
-        Label(L10n.text("source.icloud"), systemImage: "icloud").tag(ReminderSource.iCloud)
-        Label(L10n.text("source.local"), systemImage: "desktopcomputer").tag(ReminderSource.local)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("list.new")
+            .font(.headline)
+          Text("list.new.detail")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
       }
-      .pickerStyle(.segmented)
+
+      VStack(alignment: .leading, spacing: 7) {
+        Text("list.name")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+
+        HStack(spacing: 9) {
+          Image(systemName: "text.cursor")
+            .font(.caption)
+            .foregroundStyle(listNameFocused ? accentColor : .secondary)
+          TextField(L10n.text("list.name.placeholder"), text: $listNameDraft)
+            .textFieldStyle(.plain)
+            .focused($listNameFocused)
+            .onSubmit { createListFromForm() }
+        }
+        .padding(.horizontal, 11)
+        .frame(height: 39)
+        .background {
+          RoundedRectangle(cornerRadius: 11)
+            .fill(.white.opacity(listNameFocused ? 0.09 : 0.065))
+        }
+        .overlay {
+          RoundedRectangle(cornerRadius: 11)
+            .stroke(
+              listNameFocused ? accentColor.opacity(0.75) : .white.opacity(0.10),
+              lineWidth: listNameFocused ? 1.25 : 1
+            )
+        }
+      }
+
+      VStack(alignment: .leading, spacing: 7) {
+        Text("list.source")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+
+        HStack(spacing: 10) {
+          listSourceOption(.iCloud)
+          listSourceOption(.local)
+        }
+      }
 
       if model.requestedListCreationSource == .iCloud, model.authorization != .fullAccess {
-        Text("list.icloud-permission-required")
+        Label("list.icloud-permission-required", systemImage: "exclamationmark.circle.fill")
           .font(.caption)
           .foregroundStyle(.orange)
+          .lineLimit(1)
       }
 
-      HStack {
+      Spacer(minLength: 0)
+
+      HStack(spacing: 10) {
+        Spacer()
         Button(L10n.text("common.cancel")) {
           model.cancelListCreation()
           listNameDraft = ""
         }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+
         Button(L10n.text("list.create")) { createListFromForm() }
+          .buttonStyle(.borderedProminent)
+          .controlSize(.large)
+          .tint(accentColor)
           .keyboardShortcut(.defaultAction)
           .disabled(
             listNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -630,7 +878,62 @@ struct IslandRootView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .padding(24)
+    .padding(.horizontal, 22)
+    .padding(.vertical, 17)
+  }
+
+  private func listSourceOption(_ source: ReminderSource) -> some View {
+    let isSelected = model.requestedListCreationSource == source
+    let titleKey = source == .iCloud ? "source.icloud" : "source.local"
+    let detailKey = source == .iCloud ? "source.icloud.detail" : "source.local.detail"
+
+    return Button {
+      model.requestedListCreationSource = source
+    } label: {
+      HStack(spacing: 9) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 8)
+            .fill(isSelected ? accentColor.opacity(0.18) : .white.opacity(0.06))
+          Image(systemName: source.symbolName)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(isSelected ? accentColor : .secondary)
+        }
+        .frame(width: 30, height: 30)
+
+        VStack(alignment: .leading, spacing: 1) {
+          Text(L10n.text(titleKey))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+          Text(L10n.text(detailKey))
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+
+        Spacer(minLength: 2)
+
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+          .font(.system(size: 14, weight: .medium))
+          .foregroundStyle(isSelected ? accentColor : .white.opacity(0.18))
+      }
+      .padding(.horizontal, 10)
+      .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+      .background {
+        RoundedRectangle(cornerRadius: 12)
+          .fill(isSelected ? accentColor.opacity(0.10) : .white.opacity(0.035))
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: 12)
+          .stroke(
+            isSelected ? accentColor.opacity(0.65) : .white.opacity(0.09),
+            lineWidth: isSelected ? 1.25 : 1
+          )
+      }
+      .contentShape(RoundedRectangle(cornerRadius: 12))
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 
   private var listRenameForm: some View {
@@ -694,7 +997,7 @@ struct IslandRootView: View {
         .font(.caption2)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
-      if isPinned {
+      if model.islandState.showsAuthorizationActions {
         if model.isRequestingAccess {
           ProgressView()
             .controlSize(.small)
@@ -877,17 +1180,31 @@ struct IslandRootView: View {
   }
 
   private var remainingCountRing: some View {
-    ZStack {
+    ZStack(alignment: .center) {
       Circle()
-        .stroke(.green, lineWidth: 1.5)
+        .stroke(.green, lineWidth: 3)
       Text("\(model.remainingCount)")
-        .font(.system(size: 9, weight: .bold, design: .rounded))
-        .foregroundStyle(.blue)
+        .font(.system(size: 9, weight: .black, design: .rounded))
+        .foregroundStyle(.green)
         .monospacedDigit()
+        .contentTransition(.numericText())
         .minimumScaleFactor(0.7)
         .padding(2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
     .frame(width: 18, height: 18)
+    .offset(y: -1)
+    .animation(
+      reduceMotion ? nil : .smooth(duration: 0.22, extraBounce: 0),
+      value: model.remainingCount
+    )
+  }
+
+  private var surfaceAnimation: Animation? {
+    guard !reduceMotion else { return nil }
+    let motion = model.islandState.motionProfile
+    let extraBounce = max(0, 1 - motion.dampingFraction) * 0.2
+    return .smooth(duration: motion.response, extraBounce: extraBounce)
   }
 
   private func dueLabel(for reminder: ReminderSnapshot) -> (text: String, isOverdue: Bool)? {
