@@ -24,9 +24,9 @@ _Avoid_: Selected calendar, current category
 The top-center surface that is visually attached to a physical display notch, or shown as a top-center capsule on a display without one.
 _Avoid_: Popup, widget, panel
 
-**Selected Display**:
-The single display that hosts the Island.
-_Avoid_: Main monitor, primary screen
+**Host Display**:
+The single display that currently hosts the Island. Todo Island determines it from the display containing the pointer rather than asking the user to select one.
+_Avoid_: Selected Display, main monitor, primary screen
 
 **Island Preview**:
 The expanded Island shown while the pointer hovers over its collapsed surface. It supports pointer-based Reminder actions without taking keyboard focus and closes 500 milliseconds after the pointer leaves. Quick Add remains visible; clicking it converts the Preview to a Pinned Island for text input.
@@ -34,7 +34,11 @@ _Avoid_: Hover mode, passive popup
 
 **Pinned Island**:
 The expanded, interactive Island entered by clicking it. It takes keyboard focus and remains open while the user creates or manages Reminders.
-_Avoid_: Locked Island, focused popup
+_Avoid_: Focused popup
+
+**Locked Island**:
+An Island that cannot present or modify Reminders because Reminders access is unavailable. It explains the required access and offers the appropriate authorization or recovery action.
+_Avoid_: Onboarding, permission page
 
 **Quick Add**:
 The compact input in a Pinned Island that creates a Pending Reminder from a title alone in the Active List. A Quick Add Reminder initially has no Due Date or Priority.

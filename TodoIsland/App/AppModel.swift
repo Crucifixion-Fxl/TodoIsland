@@ -9,7 +9,10 @@ final class AppModel: ObservableObject {
   @Published private(set) var reminders: [ReminderSnapshot] = []
   @Published private(set) var islandState: IslandPresentationState = .collapsed
   @Published private(set) var isLoading = false
+  @Published private(set) var isRequestingAccess = false
+  @Published private(set) var isEditingDraftValidated = true
   @Published private(set) var completingReminderIDs: Set<String> = []
+  @Published private(set) var hostDisplayID: String?
   @Published var errorMessage: String?
   @Published var activeListID: String? {
     didSet {
@@ -20,12 +23,6 @@ final class AppModel: ObservableObject {
   @Published var editingReminderID: String?
   @Published var draft: ReminderDraft?
   @Published var quickAddTitle = ""
-  @Published var selectedDisplayID: String? {
-    didSet {
-      defaults.set(selectedDisplayID, forKey: Keys.selectedDisplayID)
-    }
-  }
-  @Published private(set) var displays: [DisplaySnapshot] = []
 
   private let store: ReminderStore
   private let defaults: UserDefaults
@@ -35,8 +32,6 @@ final class AppModel: ObservableObject {
 
   private enum Keys {
     static let activeListID = "active-list-id"
-    static let selectedDisplayID = "selected-display-id"
-    static let completedOnboarding = "completed-onboarding"
   }
 
   init(
@@ -46,8 +41,13 @@ final class AppModel: ObservableObject {
     self.store = store
     self.defaults = defaults
     authorization = store.authorizationStatus()
+    if authorization == .notDetermined {
+      islandState = .pinned
+    }
     activeListID = defaults.string(forKey: Keys.activeListID)
-    selectedDisplayID = defaults.string(forKey: Keys.selectedDisplayID)
+    hostDisplayID = nil
+    defaults.removeObject(forKey: "selected-display-id")
+    defaults.removeObject(forKey: "completed-onboarding")
 
     store.onStoreChanged = { [weak self] in
       self?.scheduleRefresh()
@@ -60,17 +60,30 @@ final class AppModel: ObservableObject {
 
   var nextReminder: ReminderSnapshot? { reminders.first }
   var remainingCount: Int { reminders.count }
-  var hasCompletedOnboarding: Bool { defaults.bool(forKey: Keys.completedOnboarding) }
+  var canSaveEditingDraft: Bool {
+    guard
+      authorization == .fullAccess,
+      isEditingDraftValidated,
+      let editingReminderID,
+      draft != nil
+    else { return false }
+    return reminders.contains { $0.id == editingReminderID }
+  }
 
   func start() async {
-    reloadDisplays()
     authorization = store.authorizationStatus()
     if authorization == .fullAccess {
       await reload()
+    } else if authorization == .notDetermined {
+      pinIsland()
     }
   }
 
   func requestAccess() async {
+    guard authorization == .notDetermined, !isRequestingAccess else { return }
+    isRequestingAccess = true
+    defer { isRequestingAccess = false }
+
     do {
       _ = try await store.requestFullAccess()
       authorization = store.authorizationStatus()
@@ -79,10 +92,6 @@ final class AppModel: ObservableObject {
       present(error)
       authorization = store.authorizationStatus()
     }
-  }
-
-  func completeOnboarding() {
-    defaults.set(true, forKey: Keys.completedOnboarding)
   }
 
   func reload() async {
@@ -101,6 +110,7 @@ final class AppModel: ObservableObject {
       guard let activeListID else {
         reminders = []
         selectedReminderID = nil
+        isEditingDraftValidated = editingReminderID == nil
         return
       }
 
@@ -109,23 +119,27 @@ final class AppModel: ObservableObject {
       if !reminders.contains(where: { $0.id == selectedReminderID }) {
         selectedReminderID = reminders.first?.id
       }
+      if let editingReminderID {
+        isEditingDraftValidated = reminders.contains { $0.id == editingReminderID }
+      } else {
+        isEditingDraftValidated = true
+      }
     } catch {
       present(error)
     }
   }
 
   func selectList(_ id: String) {
-    guard lists.contains(where: { $0.id == id }) else { return }
+    guard authorization == .fullAccess, lists.contains(where: { $0.id == id }) else { return }
     activeListID = id
     selectedReminderID = nil
-    editingReminderID = nil
-    draft = nil
+    cancelEditing()
     Task { await reload() }
   }
 
   func createQuickReminder() {
     let title = quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty, let activeListID else { return }
+    guard authorization == .fullAccess, !title.isEmpty, let activeListID else { return }
     quickAddTitle = ""
 
     Task {
@@ -140,28 +154,37 @@ final class AppModel: ObservableObject {
   }
 
   func beginEditing(_ reminder: ReminderSnapshot) {
+    guard authorization == .fullAccess else { return }
     selectedReminderID = reminder.id
     editingReminderID = reminder.id
     draft = ReminderDraft(reminder: reminder)
+    isEditingDraftValidated = true
   }
 
   func cancelEditing() {
     editingReminderID = nil
     draft = nil
+    isEditingDraftValidated = true
   }
 
   func saveEditing() {
     guard let id = editingReminderID, let draft else { return }
+    guard authorization == .fullAccess, isEditingDraftValidated else { return }
+    guard reminders.contains(where: { $0.id == id }) else {
+      errorMessage = ReminderStoreError.reminderNotFound.localizedDescription
+      return
+    }
     guard !draft.normalizedTitle.isEmpty else {
       errorMessage = ReminderStoreError.emptyTitle.localizedDescription
       return
     }
 
-    editingReminderID = nil
-    self.draft = nil
     Task {
       do {
         try await store.updateReminder(id: id, from: draft)
+        if editingReminderID == id, self.draft == draft {
+          cancelEditing()
+        }
         await reload()
       } catch {
         present(error)
@@ -171,6 +194,7 @@ final class AppModel: ObservableObject {
 
   func complete(_ reminder: ReminderSnapshot) {
     guard
+      authorization == .fullAccess,
       reminders.contains(where: { $0.id == reminder.id }),
       completingReminderIDs.insert(reminder.id).inserted
     else { return }
@@ -193,6 +217,7 @@ final class AppModel: ObservableObject {
   }
 
   func delete(_ reminder: ReminderSnapshot) {
+    guard authorization == .fullAccess else { return }
     Task {
       do {
         try await store.deleteReminder(id: reminder.id)
@@ -248,20 +273,28 @@ final class AppModel: ObservableObject {
   func collapseIsland() {
     hoverTask?.cancel()
     isPointerInsideIsland = false
-    cancelEditing()
+    if authorization == .fullAccess {
+      cancelEditing()
+    }
     islandState = .collapsed
   }
 
-  func reloadDisplays() {
-    displays = DisplaySupport.snapshots()
-    if !displays.contains(where: { $0.id == selectedDisplayID }) {
-      selectedDisplayID = displays.first(where: \.hasPhysicalNotch)?.id ?? displays.first?.id
-    }
+  func setHostDisplayID(_ displayID: String?) {
+    hostDisplayID = displayID
   }
 
   func markApplicationActive() {
-    authorization = store.authorizationStatus()
-    if authorization == .fullAccess { scheduleRefresh(delay: .milliseconds(50)) }
+    let newAuthorization = store.authorizationStatus()
+    authorization = newAuthorization
+    if newAuthorization == .fullAccess {
+      scheduleRefresh(delay: .milliseconds(50))
+    } else {
+      refreshTask?.cancel()
+      isLoading = false
+      if draft != nil {
+        isEditingDraftValidated = false
+      }
+    }
   }
 
   private func scheduleRefresh(delay: Duration = .milliseconds(250)) {

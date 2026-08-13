@@ -21,7 +21,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var islandController: IslandWindowController?
   private var statusItem: NSStatusItem?
   private var settingsController: HostedWindowController<AnyView>?
-  private var onboardingController: HostedWindowController<AnyView>?
   private var launchAtLoginMenuItem: NSMenuItem?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -31,9 +30,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     Task {
       await model.start()
       islandController?.show()
-      if !model.hasCompletedOnboarding || model.authorization != .fullAccess {
-        showOnboarding()
-      }
     }
   }
 
@@ -56,7 +52,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   @objc private func openSettings() {
     if settingsController == nil {
-      let view = AnyView(SettingsView().environmentObject(model))
+      let view = AnyView(
+        SettingsView { [weak self] in
+          self?.islandController?.pinAndShow()
+        }
+        .environmentObject(model)
+      )
       settingsController = HostedWindowController(
         title: L10n.text("settings.title"),
         size: NSSize(width: 520, height: 410),
@@ -84,25 +85,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   @objc private func quit() {
     NSApp.terminate(nil)
-  }
-
-  private func showOnboarding() {
-    if onboardingController == nil {
-      let view = AnyView(
-        OnboardingView { [weak self] in
-          self?.onboardingController?.close()
-          self?.model.collapseIsland()
-          self?.islandController?.show()
-        }
-        .environmentObject(model)
-      )
-      onboardingController = HostedWindowController(
-        title: L10n.text("onboarding.window-title"),
-        size: NSSize(width: 520, height: 520),
-        rootView: view
-      )
-    }
-    onboardingController?.present()
   }
 
   private func configureStatusItem() {

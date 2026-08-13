@@ -20,6 +20,8 @@
 "list.switch" = "切换提醒事项列表";
 "list.no-icloud" = "没有 iCloud 列表";
 "list.no-icloud.detail" = "请先在提醒事项中创建 iCloud 列表，然后返回 Todo Island。";
+"list.open-reminders" = "打开提醒事项";
+"list.check-again" = "重新检查";
 "reminders.remaining" = "还有 %d 项";
 
 "reminder.complete" = "完成 %@";
@@ -48,32 +50,22 @@
 "date.today" = "今天";
 
 "permission.required" = "需要提醒事项权限";
-"permission.required.detail" = "Todo Island 需要完整权限来显示和管理所选 iCloud 列表。";
+"permission.required.detail" = "Apple 没有提供只读提醒事项权限。Todo Island 只使用完整权限来显示和管理你选择的 iCloud 提醒事项。";
+"permission.privacy" = "提醒事项内容只留在这台 Mac 上，不使用服务器、分析服务或内容日志。";
+"permission.allow" = "允许访问提醒事项";
+"permission.open-island" = "在灵动岛中授权";
 "permission.open-settings" = "打开系统设置";
 "permission.full-access" = "完整访问";
 "permission.not-determined" = "尚未请求";
 "permission.denied" = "已拒绝";
 "permission.restricted" = "受限制";
 
-"onboarding.window-title" = "欢迎使用 Todo Island";
-"onboarding.title" = "让提醒事项待在刘海旁";
-"onboarding.subtitle" = "一个用于查看和管理未完成 iCloud 提醒事项的专注空间。";
-"onboarding.permission.title" = "为什么需要完整权限？";
-"onboarding.permission.detail" = "Apple 没有提供只读提醒事项权限。Todo Island 只会为你执行的操作使用完整权限。";
-"onboarding.privacy" = "提醒事项内容只留在这台 Mac 上，不使用服务器、分析服务或内容日志。";
-"onboarding.allow" = "允许访问提醒事项";
-"onboarding.continue" = "开始使用 Todo Island";
-"onboarding.list" = "初始列表";
-
-"display.notched" = "%@ — 带刘海";
-
 "settings.title" = "Todo Island 设置";
 "settings.reminders" = "提醒事项";
 "settings.permission" = "权限";
 "settings.island" = "灵动岛";
-"settings.display" = "显示屏";
 "settings.fullscreen" = "全屏";
-"settings.fullscreen.policy" = "刘海屏保留，无刘海胶囊隐藏";
+"settings.fullscreen.policy" = "隐藏折叠胶囊，主动打开的灵动岛仍可显示";
 "settings.launch-at-login" = "登录时启动";
 "settings.about" = "关于";
 "settings.privacy" = "Todo Island 只在这台 Mac 上处理提醒事项内容。";

@@ -8,10 +8,15 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
   private let model: AppModel
   private let panel = IslandPanel()
   private(set) var appliedState: IslandPresentationState?
+  private(set) var appliedHostDisplayID: String?
   private var cancellables: Set<AnyCancellable> = []
   private var screenObserver: NSObjectProtocol?
   private var applicationDeactivationObserver: NSObjectProtocol?
+  private var pointerDisplayTimer: Timer?
   private var fullScreenTimer: Timer?
+  private var hostDisplayTracker = HostDisplayTracker()
+  private var isChangingHostDisplay = false
+  private var hostDisplayTransitionGeneration = 0
 
   init(model: AppModel) {
     self.model = model
@@ -25,19 +30,13 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
     hostingView.layer?.backgroundColor = NSColor.clear.cgColor
     panel.contentView = hostingView
 
+    refreshHostDisplay()
+
     model.$islandState
       .removeDuplicates()
       .sink { [weak self] state in
         guard let self else { return }
-        self.applyState(state: state, displayID: self.model.selectedDisplayID, animated: true)
-      }
-      .store(in: &cancellables)
-
-    model.$selectedDisplayID
-      .removeDuplicates()
-      .sink { [weak self] displayID in
-        guard let self else { return }
-        self.applyState(state: self.model.islandState, displayID: displayID, animated: false)
+        self.applyState(state: state, displayID: self.model.hostDisplayID, animated: true)
       }
       .store(in: &cancellables)
 
@@ -47,13 +46,14 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
       queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated {
-        self?.model.reloadDisplays()
         guard let self else { return }
-        self.applyState(
-          state: self.model.islandState,
-          displayID: self.model.selectedDisplayID,
-          animated: false
-        )
+        if !self.refreshHostDisplay(interruptsTransition: true) {
+          self.applyState(
+            state: self.model.islandState,
+            displayID: self.model.hostDisplayID,
+            animated: false
+          )
+        }
       }
     }
 
@@ -63,9 +63,17 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
       queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated {
-        guard self?.model.islandState == .pinned else { return }
+        guard
+          self?.model.islandState == .pinned,
+          self?.model.isRequestingAccess == false
+        else { return }
         self?.model.collapseIsland()
       }
+    }
+
+    pointerDisplayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) {
+      [weak self] _ in
+      Task { @MainActor in self?.refreshHostDisplay() }
     }
 
     fullScreenTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -78,13 +86,15 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
     if let applicationDeactivationObserver {
       NotificationCenter.default.removeObserver(applicationDeactivationObserver)
     }
+    pointerDisplayTimer?.invalidate()
     fullScreenTimer?.invalidate()
   }
 
   func show() {
+    refreshHostDisplay()
     applyState(
       state: model.islandState,
-      displayID: model.selectedDisplayID,
+      displayID: model.hostDisplayID,
       animated: false
     )
   }
@@ -98,6 +108,81 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
   func windowDidResignKey(_ notification: Notification) {
     // SwiftUI menus temporarily take key status from the panel. The pinned Island
     // closes when the application deactivates, not during an in-app menu handoff.
+  }
+
+  @discardableResult
+  private func refreshHostDisplay(
+    now: TimeInterval = ProcessInfo.processInfo.systemUptime,
+    interruptsTransition: Bool = false
+  ) -> Bool {
+    guard !isChangingHostDisplay || interruptsTransition else { return false }
+    if interruptsTransition {
+      isChangingHostDisplay = false
+    }
+
+    let pointerDisplayID = DisplaySupport.screenContainingPointer()?.todoIslandDisplayID
+    let fallbackDisplayID = DisplaySupport.fallbackScreen()?.todoIslandDisplayID
+    guard
+      let change = hostDisplayTracker.observe(
+        pointerDisplayID: pointerDisplayID,
+        fallbackDisplayID: fallbackDisplayID,
+        availableDisplayIDs: DisplaySupport.availableDisplayIDs(),
+        locksHostDisplay: model.islandState != .collapsed,
+        now: now
+      )
+    else { return false }
+
+    applyHostDisplayChange(change)
+    return true
+  }
+
+  private func applyHostDisplayChange(_ change: HostDisplayChange) {
+    hostDisplayTransitionGeneration += 1
+    let transitionGeneration = hostDisplayTransitionGeneration
+    appliedHostDisplayID = change.displayID
+    model.setHostDisplayID(change.displayID)
+
+    let shouldFade =
+      change.reason == .pointerDwell
+      && panel.isVisible
+      && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+    guard shouldFade else {
+      isChangingHostDisplay = false
+      panel.alphaValue = 1
+      applyState(state: model.islandState, displayID: change.displayID, animated: false)
+      return
+    }
+
+    isChangingHostDisplay = true
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0.1
+      context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+      panel.animator().alphaValue = 0
+    } completionHandler: { [weak self] in
+      Task { @MainActor in
+        guard let self else { return }
+        guard self.hostDisplayTransitionGeneration == transitionGeneration else {
+          self.panel.alphaValue = 1
+          self.isChangingHostDisplay = false
+          self.updateVisibility()
+          return
+        }
+        self.applyState(state: self.model.islandState, displayID: change.displayID, animated: false)
+        self.panel.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0.12
+          context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+          self.panel.animator().alphaValue = 1
+        } completionHandler: { [weak self] in
+          Task { @MainActor in
+            guard self?.hostDisplayTransitionGeneration == transitionGeneration else { return }
+            self?.isChangingHostDisplay = false
+            self?.updateVisibility()
+          }
+        }
+      }
+    }
   }
 
   private func applyState(
@@ -150,7 +235,7 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
   }
 
   private func updateVisibility() {
-    updateVisibility(state: model.islandState, displayID: model.selectedDisplayID)
+    updateVisibility(state: model.islandState, displayID: model.hostDisplayID)
   }
 
   private func updateVisibility(state: IslandPresentationState, displayID: String?) {
@@ -159,7 +244,7 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
       return
     }
 
-    if DisplaySupport.shouldHideFallbackInFullScreen(screen) {
+    if state != .pinned && DisplaySupport.shouldHideFallbackInFullScreen(screen) {
       panel.orderOut(nil)
     } else if !panel.isVisible {
       if state == .pinned {

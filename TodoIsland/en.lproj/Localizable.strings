@@ -20,6 +20,8 @@
 "list.switch" = "Switch reminder list";
 "list.no-icloud" = "No iCloud Lists";
 "list.no-icloud.detail" = "Create an iCloud reminder list in Reminders, then return to Todo Island.";
+"list.open-reminders" = "Open Reminders";
+"list.check-again" = "Check Again";
 "reminders.remaining" = "%d reminders remaining";
 
 "reminder.complete" = "Complete %@";
@@ -48,32 +50,22 @@
 "date.today" = "Today";
 
 "permission.required" = "Reminders Access Required";
-"permission.required.detail" = "Todo Island needs full Reminders access to display and manage your selected iCloud list.";
+"permission.required.detail" = "Apple does not offer read-only Reminders permission. Todo Island uses full access only to display and manage the iCloud reminders you choose.";
+"permission.privacy" = "Reminder content stays on this Mac. There is no server, analytics, or content logging.";
+"permission.allow" = "Allow Reminders Access";
+"permission.open-island" = "Open Island to Authorize";
 "permission.open-settings" = "Open System Settings";
 "permission.full-access" = "Full Access";
 "permission.not-determined" = "Not Requested";
 "permission.denied" = "Denied";
 "permission.restricted" = "Restricted";
 
-"onboarding.window-title" = "Welcome to Todo Island";
-"onboarding.title" = "Your reminders, right at the notch";
-"onboarding.subtitle" = "A focused island for viewing and managing unfinished iCloud reminders.";
-"onboarding.permission.title" = "Why full Reminders access?";
-"onboarding.permission.detail" = "Apple does not offer read-only Reminders permission. Todo Island uses full access only for the actions you perform.";
-"onboarding.privacy" = "Reminder content stays on this Mac. There is no server, analytics, or content logging.";
-"onboarding.allow" = "Allow Reminders Access";
-"onboarding.continue" = "Start Using Todo Island";
-"onboarding.list" = "Initial List";
-
-"display.notched" = "%@ — Notched";
-
 "settings.title" = "Todo Island Settings";
 "settings.reminders" = "Reminders";
 "settings.permission" = "Permission";
 "settings.island" = "Island";
-"settings.display" = "Selected Display";
 "settings.fullscreen" = "Full Screen";
-"settings.fullscreen.policy" = "Keep on notched displays; hide fallback capsule";
+"settings.fullscreen.policy" = "Hide the collapsed fallback capsule; allow explicitly opened Islands";
 "settings.launch-at-login" = "Launch at Login";
 "settings.about" = "About";
 "settings.privacy" = "Todo Island processes Reminder content only on this Mac.";
