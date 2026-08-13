@@ -55,9 +55,11 @@ On a display with a physical notch, a small cloud or Mac source glyph and the Ac
 
 Hovering briefly over the Collapsed Island expands an Island Preview without taking focus from the current application. The Preview shows the Active List's Pending Reminders and supports pointer-based actions such as switching lists and completing a Reminder. Quick Add uses the same bottom input as the Pinned Island; clicking it pins the Island and focuses the field. The Preview closes 500 milliseconds after the pointer leaves.
 
+The nominal Preview size is 440 by 260 points so the All Done state and Quick Add remain fully visible together. It still remains smaller than the Pinned Island and adapts down for shorter displays.
+
 ### Pinned Island
 
-Clicking the Island opens or converts it to a Pinned Island. The Pinned Island can become key, accepts keyboard input, and remains open while the user works. When the Active List has no Pending Reminders, a Pinned Island closes 500 milliseconds after the pointer leaves unless Quick Add is focused or contains text; locked and no-list recovery states remain open.
+Clicking the Island opens or converts it to a Pinned Island. The Pinned Island can become key and accepts keyboard input. When it has an Active List, it collapses 200 milliseconds after the pointer leaves; returning within that interval cancels the collapse. If Quick Add or a Reminder editor is unfinished, the collapse preserves its draft, and returning the pointer immediately reopens the Pinned Island and restores the corresponding field focus. A submitted Quick Add ends its editing session, so the next pointer return follows the normal Preview behavior. Locked and no-list recovery states remain open. The header has no separate close button.
 
 - `Escape` cancels an active edit or closes the Island.
 - Clicking outside closes the Island.
@@ -82,7 +84,7 @@ The list menu includes a New List action that pins the Island when necessary and
 
 Creating a list makes it the Active List and focuses Quick Add. Local Reminder Lists additionally expose rename and delete actions. Deletion confirmation shows the list name plus its Pending and Completed Reminder counts, then permanently removes the list and all of those Reminders. If the deleted list was active, the app falls back to the first available iCloud list and then another Local list. If neither exists, it shows the Local empty state; it does not automatically recreate a Default Local List after deliberate deletion.
 
-Quick Add creates a Pending Reminder in the Active List from a title followed by Enter. It initially has no Due Date or Priority. The user can then open its compact editor.
+Quick Add creates a Pending Reminder in the Active List from a title followed by Enter. Enter also ends Quick Add focus. The Reminder initially has no Due Date or Priority, and the user can then open its compact editor.
 
 When the Active List has no Pending Reminders, the All Done state presents a prominent Add Reminder action that pins the Island when necessary and focuses Quick Add.
 

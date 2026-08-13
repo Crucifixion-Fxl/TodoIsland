@@ -17,7 +17,6 @@
 "island.locked" = "Choose iCloud or Local";
 "island.locked.accessibility" = "Choose iCloud access or Todo Island local reminders.";
 "island.all-done" = "All Done";
-"island.close" = "Close Todo Island";
 "island.collapsed.accessibility" = "List: %@. %d reminders remaining.";
 
 "list.none" = "No List";
@@ -29,6 +28,7 @@
 "list.open-reminders" = "Open Reminders";
 "list.check-again" = "Check Again";
 "list.new" = "New List";
+"list.new.detail" = "Choose a name and where it should be stored.";
 "list.new-icloud" = "New iCloud List";
 "list.new-local" = "New Local List";
 "list.create" = "Create List";
@@ -36,6 +36,7 @@
 "list.delete" = "Delete List";
 "list.open" = "Open List";
 "list.active" = "Active List";
+"list.name" = "Name";
 "list.name.placeholder" = "List name";
 "list.source" = "Source";
 "list.icloud-permission-required" = "Allow Reminders access before creating an iCloud list.";
@@ -43,7 +44,9 @@
 "list.delete.confirm" = "Delete List";
 "list.delete.detail" = "“%@” contains %d pending and %d completed reminders. All of them will be permanently deleted.";
 "source.icloud" = "iCloud";
+"source.icloud.detail" = "Apple Reminders";
 "source.local" = "Todo Island Local";
+"source.local.detail" = "Only on this Mac";
 "source.use-local" = "Use Local";
 "reminders.remaining" = "%d reminders remaining";
 
@@ -54,6 +57,7 @@
 "reminder.actions" = "Actions for %@";
 
 "editor.title.placeholder" = "Reminder title";
+"editor.edit-reminder" = "Edit Reminder";
 "editor.due-date" = "Due";
 "editor.time" = "Time";
 "editor.priority" = "Priority";

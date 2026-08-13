@@ -3,6 +3,27 @@ import XCTest
 @testable import TodoIsland
 
 final class LocalSourceAppModelTests: XCTestCase {
+  func testSwitchingListCreationSourcePreservesEnteredName() {
+    XCTAssertFalse(
+      ListCreationDraftPolicy.shouldResetName(
+        previousSource: .iCloud,
+        newSource: .local
+      ))
+    XCTAssertFalse(
+      ListCreationDraftPolicy.shouldResetName(
+        previousSource: .local,
+        newSource: .iCloud
+      ))
+  }
+
+  func testOpeningListCreationFormStartsWithAnEmptyName() {
+    XCTAssertTrue(
+      ListCreationDraftPolicy.shouldResetName(
+        previousSource: nil,
+        newSource: .iCloud
+      ))
+  }
+
   @MainActor
   func testDeniedICloudAuthorizationStillLoadsAndMutatesLocalSource() async throws {
     let defaults = UserDefaults(suiteName: #function)!
@@ -23,6 +44,19 @@ final class LocalSourceAppModelTests: XCTestCase {
 
     XCTAssertEqual(model.reminders.map(\.title), ["Local task"])
     XCTAssertEqual(store.createdReminderTitles, ["Local task"])
+  }
+
+  @MainActor
+  func testDeniedICloudAuthorizationOffersRecoveryWhileLocalListIsActive() async {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(store: LocalOnlyTestReminderStore(), defaults: defaults)
+    await model.start()
+
+    XCTAssertEqual(model.activeList?.source, .local)
+    XCTAssertEqual(model.iCloudSourceMenuState, .authorizationRequired)
   }
 
   @MainActor
@@ -59,7 +93,8 @@ final class LocalSourceAppModelTests: XCTestCase {
     let list = try XCTUnwrap(model.activeList)
 
     await model.prepareListDeletion(list)
-    await model.confirmListDeletion()
+    let candidate = try XCTUnwrap(model.listDeletionCandidate)
+    await model.confirmListDeletion(candidate)
 
     XCTAssertNil(model.activeList)
     XCTAssertEqual(model.preferredEmptySource, .local)
@@ -68,6 +103,26 @@ final class LocalSourceAppModelTests: XCTestCase {
     await model.useLocal()
     XCTAssertEqual(store.createdListTitles, [])
     XCTAssertEqual(model.requestedListCreationSource, .local)
+  }
+
+  @MainActor
+  func testConfirmationDialogDismissalDoesNotCancelListDeletion() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let store = LocalOnlyTestReminderStore()
+    let model = AppModel(store: store, defaults: defaults)
+    await model.start()
+    let list = try XCTUnwrap(model.activeList)
+
+    await model.prepareListDeletion(list)
+    let candidate = try XCTUnwrap(model.listDeletionCandidate)
+    model.cancelListDeletion()
+    await model.confirmListDeletion(candidate)
+
+    let remainingLists = try await store.fetchLists()
+    XCTAssertFalse(remainingLists.contains(where: { $0.id == list.id }))
   }
 }
 

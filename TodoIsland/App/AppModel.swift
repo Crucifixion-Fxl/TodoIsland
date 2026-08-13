@@ -2,6 +2,12 @@ import AppKit
 import Combine
 import Foundation
 
+enum ICloudSourceMenuState: Equatable, Sendable {
+  case authorizationRequired
+  case empty
+  case available
+}
+
 @MainActor
 final class AppModel: ObservableObject {
   @Published private(set) var authorization: ReminderAuthorization
@@ -18,6 +24,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var preferredEmptySource: ReminderSource?
   @Published var requestedListCreationSource: ReminderSource?
   @Published private(set) var quickAddFocusRequestID = UUID()
+  @Published private(set) var editingFocusRequestID = UUID()
   @Published var errorMessage: String?
   @Published var activeListID: String? {
     didSet {
@@ -35,6 +42,12 @@ final class AppModel: ObservableObject {
   private var hoverTask: Task<Void, Never>?
   private var isPointerInsideIsland = false
   private var isQuickAddActive = false
+  private var suspendedEditingFocus: SuspendedEditingFocus?
+
+  private enum SuspendedEditingFocus {
+    case quickAdd
+    case reminderEditor
+  }
 
   private enum Keys {
     static let activeListID = "active-list-id"
@@ -68,11 +81,17 @@ final class AppModel: ObservableObject {
 
   var iCloudLists: [ReminderListSnapshot] { lists.filter { $0.source == .iCloud } }
   var localLists: [ReminderListSnapshot] { lists.filter { $0.source == .local } }
+  var iCloudSourceMenuState: ICloudSourceMenuState {
+    guard authorization == .fullAccess else { return .authorizationRequired }
+    return iCloudLists.isEmpty ? .empty : .available
+  }
+  var shouldShowAuthorizationLockInHeader: Bool {
+    authorization != .fullAccess && activeList == nil
+  }
   var canUseActiveList: Bool {
     guard let activeList else { return false }
     return canAccess(source: activeList.source)
   }
-
   var nextReminder: ReminderSnapshot? { reminders.first }
   var remainingCount: Int { reminders.count }
   var canSaveEditingDraft: Bool {
@@ -345,9 +364,10 @@ final class AppModel: ObservableObject {
     listDeletionCandidate = nil
   }
 
-  func confirmListDeletion() async {
-    guard let candidate = listDeletionCandidate else { return }
-    listDeletionCandidate = nil
+  func confirmListDeletion(_ candidate: ReminderListDeletionSummary) async {
+    if listDeletionCandidate?.list.id == candidate.list.id {
+      listDeletionCandidate = nil
+    }
     do {
       try await store.deleteList(id: candidate.list.id)
       if activeListID == candidate.list.id {
@@ -407,6 +427,10 @@ final class AppModel: ObservableObject {
 
     if hovering {
       guard islandState == .collapsed else { return }
+      if suspendedEditingFocus != nil {
+        pinIsland()
+        return
+      }
       hoverTask = Task {
         try? await Task.sleep(for: .milliseconds(200))
         guard
@@ -424,19 +448,24 @@ final class AppModel: ObservableObject {
   func setQuickAddActive(_ active: Bool) {
     guard isQuickAddActive != active else { return }
     isQuickAddActive = active
-    hoverTask?.cancel()
-    if !active {
-      schedulePointerExitCollapseIfNeeded()
-    }
   }
 
   func pinIsland() {
     hoverTask?.cancel()
     islandState = .pinned
+    guard let suspendedEditingFocus else { return }
+    self.suspendedEditingFocus = nil
+    switch suspendedEditingFocus {
+    case .quickAdd:
+      quickAddFocusRequestID = UUID()
+    case .reminderEditor:
+      editingFocusRequestID = UUID()
+    }
   }
 
   func collapseIsland() {
     hoverTask?.cancel()
+    suspendedEditingFocus = nil
     isPointerInsideIsland = false
     isQuickAddActive = false
     if editingReminderID == nil
@@ -476,31 +505,40 @@ final class AppModel: ObservableObject {
 
   private func schedulePointerExitCollapseIfNeeded() {
     guard !isPointerInsideIsland, shouldCollapseAfterPointerExit else { return }
+    let delay: Duration = islandState == .pinned ? .milliseconds(200) : .milliseconds(500)
     hoverTask?.cancel()
     hoverTask = Task {
-      try? await Task.sleep(for: .milliseconds(500))
+      try? await Task.sleep(for: delay)
       guard
         !Task.isCancelled,
         !isPointerInsideIsland,
         shouldCollapseAfterPointerExit
       else { return }
-      collapseIsland()
+      if islandState == .pinned {
+        suspendPinnedIsland()
+      } else {
+        collapseIsland()
+      }
     }
   }
 
   private var shouldCollapseAfterPointerExit: Bool {
-    if islandState == .preview { return true }
-    guard
-      islandState == .pinned,
-      canUseActiveList,
-      activeListID != nil,
-      !isLoading,
-      reminders.isEmpty,
-      editingReminderID == nil,
-      !isQuickAddActive,
-      quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else { return false }
-    return true
+    islandState == .preview || (islandState == .pinned && canUseActiveList)
+  }
+
+  private func suspendPinnedIsland() {
+    if isQuickAddActive
+      || !quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+      suspendedEditingFocus = .quickAdd
+    } else if editingReminderID != nil, draft != nil {
+      suspendedEditingFocus = .reminderEditor
+    } else {
+      suspendedEditingFocus = nil
+    }
+
+    isQuickAddActive = false
+    islandState = .collapsed
   }
 
   private func removeCompletedReminder(id: String) {

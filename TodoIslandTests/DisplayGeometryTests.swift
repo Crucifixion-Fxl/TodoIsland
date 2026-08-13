@@ -49,6 +49,20 @@ final class DisplayGeometryTests: XCTestCase {
     )
   }
 
+  func testHoverPreviewReservesHeightForAllDoneContentAndQuickAdd() {
+    let display = DisplayMetrics(
+      frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+      visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 950),
+      safeAreaTop: 32,
+      auxiliaryLeftWidth: 654,
+      auxiliaryRightWidth: 654
+    )
+
+    let geometry = DisplayGeometryCalculator.geometry(for: display)
+
+    XCTAssertEqual(geometry.previewSize, CGSize(width: 440, height: 260))
+  }
+
   func testNoNotchUsesMenuBarHeightAndCapsuleWidth() {
     let display = DisplayMetrics(
       frame: CGRect(x: 100, y: 50, width: 1440, height: 900),

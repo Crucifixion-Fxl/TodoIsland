@@ -190,6 +190,7 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
     displayID: String?,
     animated: Bool
   ) {
+    let previousState = appliedState
     appliedState = state
     guard let screen = DisplaySupport.screen(id: displayID) else {
       panel.orderOut(nil)
@@ -206,7 +207,8 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
       let motion = state.motionProfile
       NSAnimationContext.runAnimationGroup { context in
         context.duration = motion.response
-        context.timingFunction = windowTimingFunction(for: state)
+        context.allowsImplicitAnimation = true
+        context.timingFunction = windowTimingFunction(from: previousState, to: state)
         panel.animator().setFrame(frame, display: true)
       }
     } else {
@@ -214,6 +216,7 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
     }
 
     if state == .pinned {
+      NSApp.activate(ignoringOtherApps: true)
       panel.makeKeyAndOrderFront(nil)
     } else {
       if panel.isKeyWindow {
@@ -225,12 +228,17 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
     updateVisibility(state: state, displayID: displayID)
   }
 
-  private func windowTimingFunction(for state: IslandPresentationState) -> CAMediaTimingFunction {
-    switch state {
-    case .collapsed:
-      CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
-    case .preview, .pinned:
-      CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+  private func windowTimingFunction(
+    from previousState: IslandPresentationState?,
+    to state: IslandPresentationState
+  ) -> CAMediaTimingFunction {
+    switch (previousState, state) {
+    case (.preview, .pinned):
+      CAMediaTimingFunction(controlPoints: 0.22, 0.82, 0.20, 1)
+    case (_, .collapsed):
+      CAMediaTimingFunction(controlPoints: 0.32, 0.72, 0, 1)
+    default:
+      CAMediaTimingFunction(controlPoints: 0.20, 0.84, 0.18, 1)
     }
   }
 
