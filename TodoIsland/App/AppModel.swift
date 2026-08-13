@@ -13,6 +13,11 @@ final class AppModel: ObservableObject {
   @Published private(set) var isEditingDraftValidated = true
   @Published private(set) var completingReminderIDs: Set<String> = []
   @Published private(set) var hostDisplayID: String?
+  @Published private(set) var localStoreAvailability: LocalStoreAvailability = .available
+  @Published private(set) var listDeletionCandidate: ReminderListDeletionSummary?
+  @Published private(set) var preferredEmptySource: ReminderSource?
+  @Published var requestedListCreationSource: ReminderSource?
+  @Published private(set) var quickAddFocusRequestID = UUID()
   @Published var errorMessage: String?
   @Published var activeListID: String? {
     didSet {
@@ -33,15 +38,17 @@ final class AppModel: ObservableObject {
 
   private enum Keys {
     static let activeListID = "active-list-id"
+    static let didInitializeLocalSource = "did-initialize-local-source"
   }
 
   init(
-    store: ReminderStore = EventKitReminderStore(),
+    store: ReminderStore = SourceAwareReminderStore(),
     defaults: UserDefaults = .standard
   ) {
     self.store = store
     self.defaults = defaults
     authorization = store.authorizationStatus()
+    localStoreAvailability = store.localStoreAvailability
     if authorization == .notDetermined {
       islandState = .pinned
     }
@@ -59,24 +66,31 @@ final class AppModel: ObservableObject {
     lists.first { $0.id == activeListID }
   }
 
+  var iCloudLists: [ReminderListSnapshot] { lists.filter { $0.source == .iCloud } }
+  var localLists: [ReminderListSnapshot] { lists.filter { $0.source == .local } }
+  var canUseActiveList: Bool {
+    guard let activeList else { return false }
+    return canAccess(source: activeList.source)
+  }
+
   var nextReminder: ReminderSnapshot? { reminders.first }
   var remainingCount: Int { reminders.count }
   var canSaveEditingDraft: Bool {
     guard
-      authorization == .fullAccess,
       isEditingDraftValidated,
       let editingReminderID,
       draft != nil
     else { return false }
-    return reminders.contains { $0.id == editingReminderID }
+    return reminders.contains { $0.id == editingReminderID && canAccess(source: $0.source) }
   }
 
   func start() async {
     authorization = store.authorizationStatus()
-    if authorization == .fullAccess {
-      await reload()
-    } else if authorization == .notDetermined {
+    await reload()
+    if authorization == .notDetermined, activeList?.source != .local {
       pinIsland()
+    } else if activeList?.source == .local, islandState == .pinned {
+      collapseIsland()
     }
   }
 
@@ -88,7 +102,7 @@ final class AppModel: ObservableObject {
     do {
       _ = try await store.requestFullAccess()
       authorization = store.authorizationStatus()
-      if authorization == .fullAccess { await reload() }
+      await reload()
     } catch {
       present(error)
       authorization = store.authorizationStatus()
@@ -96,7 +110,8 @@ final class AppModel: ObservableObject {
   }
 
   func reload() async {
-    guard authorization == .fullAccess else { return }
+    authorization = store.authorizationStatus()
+    localStoreAvailability = store.localStoreAvailability
     isLoading = true
     defer {
       isLoading = false
@@ -104,17 +119,48 @@ final class AppModel: ObservableObject {
     }
 
     do {
-      let newLists = try await store.fetchLists()
+      let fetchedLists = try await store.fetchLists()
+      localStoreAvailability = store.localStoreAvailability
+      var newLists = fetchedLists.filter { canAccess(source: $0.source) }
+      if authorization != .fullAccess {
+        let cachedICloudLists = lists.filter { $0.source == .iCloud }
+        newLists = cachedICloudLists + newLists.filter { $0.source == .local }
+      }
       lists = newLists
+      if newLists.contains(where: { $0.source == .local }) {
+        defaults.set(true, forKey: Keys.didInitializeLocalSource)
+      }
 
       if !newLists.contains(where: { $0.id == activeListID }) {
-        activeListID = newLists.first?.id
+        if let activeListID,
+          let migrated = newLists.first(where: {
+            $0.source == .iCloud
+              && ReminderStoreIdentity.split($0.id)?.rawID == activeListID
+          })
+        {
+          self.activeListID = migrated.id
+        } else {
+          activeListID = newLists.first(where: {
+            $0.source == .iCloud && canAccess(source: $0.source)
+          })?.id
+            ?? newLists.first(where: {
+              $0.source == .local && canAccess(source: $0.source)
+            })?.id
+        }
       }
 
       guard let activeListID else {
         reminders = []
         selectedReminderID = nil
         isEditingDraftValidated = editingReminderID == nil
+        return
+      }
+      preferredEmptySource = nil
+
+      guard let activeList, canAccess(source: activeList.source) else {
+        if editingReminderID != nil {
+          isEditingDraftValidated = false
+        }
         return
       }
 
@@ -134,8 +180,11 @@ final class AppModel: ObservableObject {
   }
 
   func selectList(_ id: String) {
-    guard authorization == .fullAccess, lists.contains(where: { $0.id == id }) else { return }
+    guard let list = lists.first(where: { $0.id == id }), canAccess(source: list.source) else {
+      return
+    }
     activeListID = id
+    preferredEmptySource = nil
     selectedReminderID = nil
     cancelEditing()
     Task { await reload() }
@@ -143,7 +192,7 @@ final class AppModel: ObservableObject {
 
   func createQuickReminder() {
     let title = quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard authorization == .fullAccess, !title.isEmpty, let activeListID else { return }
+    guard canUseActiveList, !title.isEmpty, let activeListID else { return }
     quickAddTitle = ""
 
     Task {
@@ -158,7 +207,7 @@ final class AppModel: ObservableObject {
   }
 
   func beginEditing(_ reminder: ReminderSnapshot) {
-    guard authorization == .fullAccess else { return }
+    guard canAccess(source: reminder.source) else { return }
     selectedReminderID = reminder.id
     editingReminderID = reminder.id
     draft = ReminderDraft(reminder: reminder)
@@ -173,11 +222,12 @@ final class AppModel: ObservableObject {
 
   func saveEditing() {
     guard let id = editingReminderID, let draft else { return }
-    guard authorization == .fullAccess, isEditingDraftValidated else { return }
-    guard reminders.contains(where: { $0.id == id }) else {
+    guard isEditingDraftValidated else { return }
+    guard let reminder = reminders.first(where: { $0.id == id }) else {
       errorMessage = ReminderStoreError.reminderNotFound.localizedDescription
       return
     }
+    guard canAccess(source: reminder.source) else { return }
     guard !draft.normalizedTitle.isEmpty else {
       errorMessage = ReminderStoreError.emptyTitle.localizedDescription
       return
@@ -198,7 +248,7 @@ final class AppModel: ObservableObject {
 
   func complete(_ reminder: ReminderSnapshot) {
     guard
-      authorization == .fullAccess,
+      canAccess(source: reminder.source),
       reminders.contains(where: { $0.id == reminder.id }),
       completingReminderIDs.insert(reminder.id).inserted
     else { return }
@@ -221,7 +271,7 @@ final class AppModel: ObservableObject {
   }
 
   func delete(_ reminder: ReminderSnapshot) {
-    guard authorization == .fullAccess else { return }
+    guard canAccess(source: reminder.source) else { return }
     Task {
       do {
         try await store.deleteReminder(id: reminder.id)
@@ -230,6 +280,117 @@ final class AppModel: ObservableObject {
         present(error)
       }
     }
+  }
+
+  func requestNewList(source: ReminderSource = .iCloud) {
+    requestedListCreationSource = source
+    pinIsland()
+  }
+
+  func cancelListCreation() {
+    requestedListCreationSource = nil
+  }
+
+  @discardableResult
+  func createList(title: String, source: ReminderSource) async -> Bool {
+    guard source == .local || authorization == .fullAccess else {
+      errorMessage = ReminderStoreError.operationUnsupported.localizedDescription
+      return false
+    }
+
+    do {
+      let list = try await store.createList(title: title, source: source)
+      if source == .local {
+        defaults.set(true, forKey: Keys.didInitializeLocalSource)
+      }
+      requestedListCreationSource = nil
+      await reload()
+      activeListID = lists.contains(where: { $0.id == list.id }) ? list.id : activeListID
+      if activeListID == list.id {
+        preferredEmptySource = nil
+        selectedReminderID = nil
+        reminders = []
+        quickAddFocusRequestID = UUID()
+      }
+      return activeListID == list.id
+    } catch {
+      present(error)
+      return false
+    }
+  }
+
+  @discardableResult
+  func renameList(_ list: ReminderListSnapshot, title: String) async -> Bool {
+    guard list.source == .local else { return false }
+    do {
+      try await store.renameList(id: list.id, title: title)
+      await reload()
+      return true
+    } catch {
+      present(error)
+      return false
+    }
+  }
+
+  func prepareListDeletion(_ list: ReminderListSnapshot) async {
+    guard list.source == .local else { return }
+    do {
+      listDeletionCandidate = try await store.deletionSummary(forListID: list.id)
+    } catch {
+      present(error)
+    }
+  }
+
+  func cancelListDeletion() {
+    listDeletionCandidate = nil
+  }
+
+  func confirmListDeletion() async {
+    guard let candidate = listDeletionCandidate else { return }
+    listDeletionCandidate = nil
+    do {
+      try await store.deleteList(id: candidate.list.id)
+      if activeListID == candidate.list.id {
+        activeListID = nil
+        preferredEmptySource = candidate.list.source
+      }
+      await reload()
+    } catch {
+      present(error)
+    }
+  }
+
+  func useLocal() async {
+    pinIsland()
+    guard localStoreAvailability == .available else {
+      errorMessage = ReminderStoreError.localStoreUnavailable.localizedDescription
+      return
+    }
+
+    if let list = localLists.first {
+      defaults.set(true, forKey: Keys.didInitializeLocalSource)
+      selectList(list.id)
+      return
+    }
+
+    if !defaults.bool(forKey: Keys.didInitializeLocalSource) {
+      _ = await createList(title: "Todo Island", source: .local)
+    } else {
+      requestNewList(source: .local)
+    }
+  }
+
+  func retryLocalStore() async {
+    await store.retryLocalStore()
+    localStoreAvailability = store.localStoreAvailability
+    await reload()
+  }
+
+  func showLocalDataInFinder() {
+    guard case let .unavailable(_, dataURL) = localStoreAvailability, let dataURL else { return }
+    let target = FileManager.default.fileExists(atPath: dataURL.path)
+      ? dataURL : dataURL.deletingLastPathComponent()
+    NSWorkspace.shared.activateFileViewerSelecting([target])
   }
 
   func moveSelection(_ delta: Int) {
@@ -278,7 +439,10 @@ final class AppModel: ObservableObject {
     hoverTask?.cancel()
     isPointerInsideIsland = false
     isQuickAddActive = false
-    if authorization == .fullAccess {
+    if editingReminderID == nil
+      || reminders.first(where: { $0.id == editingReminderID }).map({ canAccess(source: $0.source) })
+        == true
+    {
       cancelEditing()
     }
     islandState = .collapsed
@@ -291,14 +455,13 @@ final class AppModel: ObservableObject {
   func markApplicationActive() {
     let newAuthorization = store.authorizationStatus()
     authorization = newAuthorization
-    if newAuthorization == .fullAccess {
-      scheduleRefresh(delay: .milliseconds(50))
-    } else {
-      refreshTask?.cancel()
-      isLoading = false
-      if draft != nil {
-        isEditingDraftValidated = false
-      }
+    localStoreAvailability = store.localStoreAvailability
+    scheduleRefresh(delay: .milliseconds(50))
+    if newAuthorization != .fullAccess,
+      let editingReminderID,
+      reminders.first(where: { $0.id == editingReminderID })?.source == .iCloud
+    {
+      isEditingDraftValidated = false
     }
   }
 
@@ -329,7 +492,7 @@ final class AppModel: ObservableObject {
     if islandState == .preview { return true }
     guard
       islandState == .pinned,
-      authorization == .fullAccess,
+      canUseActiveList,
       activeListID != nil,
       !isLoading,
       reminders.isEmpty,
@@ -355,5 +518,12 @@ final class AppModel: ObservableObject {
 
   private func present(_ error: Error) {
     errorMessage = error.localizedDescription
+  }
+
+  private func canAccess(source: ReminderSource) -> Bool {
+    switch source {
+    case .iCloud: authorization == .fullAccess
+    case .local: localStoreAvailability == .available
+    }
   }
 }

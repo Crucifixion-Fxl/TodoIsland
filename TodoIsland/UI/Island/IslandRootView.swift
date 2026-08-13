@@ -6,7 +6,10 @@ struct IslandRootView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @FocusState private var quickAddFocused: Bool
   @FocusState private var editorTitleFocused: Bool
+  @FocusState private var listNameFocused: Bool
   @State private var reminderPendingDeletion: ReminderSnapshot?
+  @State private var listPendingRename: ReminderListSnapshot?
+  @State private var listNameDraft = ""
   @State private var focusQuickAddAfterPinning = false
 
   private var isPinned: Bool { model.islandState == .pinned }
@@ -58,6 +61,30 @@ struct IslandRootView: View {
       } message: {
         Text(reminderPendingDeletion?.title ?? "")
       }
+      .confirmationDialog(
+        L10n.text("list.delete.title"),
+        isPresented: Binding(
+          get: { model.listDeletionCandidate != nil },
+          set: { if !$0 { model.cancelListDeletion() } }
+        )
+      ) {
+        Button(L10n.text("list.delete.confirm"), role: .destructive) {
+          Task { await model.confirmListDeletion() }
+        }
+        Button(L10n.text("common.cancel"), role: .cancel) {
+          model.cancelListDeletion()
+        }
+      } message: {
+        if let candidate = model.listDeletionCandidate {
+          Text(
+            String(
+              format: L10n.text("list.delete.detail"),
+              candidate.list.title,
+              candidate.pendingCount,
+              candidate.completedCount
+            ))
+        }
+      }
       .alert(
         L10n.text("error.title"),
         isPresented: Binding(
@@ -74,6 +101,15 @@ struct IslandRootView: View {
       }
       .onChange(of: quickAddFocused) { _, focused in
         model.setQuickAddActive(focused)
+      }
+      .onChange(of: model.quickAddFocusRequestID) { _, _ in
+        Task { @MainActor in quickAddFocused = true }
+      }
+      .onChange(of: model.requestedListCreationSource) { _, source in
+        guard source != nil else { return }
+        listPendingRename = nil
+        listNameDraft = ""
+        Task { @MainActor in listNameFocused = true }
       }
       .onChange(of: model.islandState) { _, state in
         if state == .collapsed {
@@ -107,10 +143,10 @@ struct IslandRootView: View {
 
   @ViewBuilder
   private var collapsedContent: some View {
-    if model.authorization != .fullAccess {
+    if !model.canUseActiveList {
       HStack(spacing: 8) {
-        Image(systemName: "lock.fill")
-        Text("island.locked")
+        Image(systemName: model.authorization == .fullAccess ? "list.bullet" : "lock.fill")
+        Text(model.authorization == .fullAccess ? "list.none" : "island.locked")
           .lineLimit(1)
         Spacer(minLength: 0)
       }
@@ -118,16 +154,20 @@ struct IslandRootView: View {
       .foregroundStyle(.white)
       .padding(.horizontal, 14)
       .frame(maxHeight: .infinity)
-      .accessibilityLabel(Text("island.locked.accessibility"))
+      .accessibilityLabel(
+        Text(model.authorization == .fullAccess ? "list.none" : "island.locked.accessibility"))
     } else if hostDisplayHasNotch {
       HStack(spacing: 0) {
-        Text(model.activeList?.title ?? L10n.text("list.none"))
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(.white)
-          .lineLimit(1)
-          .minimumScaleFactor(0.72)
-          .frame(width: collapsedSideContentWidth, alignment: .leading)
-          .padding(.leading, collapsedOuterInset)
+        HStack(spacing: 4) {
+          sourceGlyph
+          Text(model.activeList?.title ?? L10n.text("list.none"))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.white)
+        .frame(width: collapsedSideContentWidth, alignment: .leading)
+        .padding(.leading, collapsedOuterInset)
 
         Color.clear
           .frame(width: hostPhysicalNotchWidth)
@@ -141,6 +181,7 @@ struct IslandRootView: View {
       .accessibilityLabel(collapsedAccessibilityLabel)
     } else {
       HStack(spacing: 8) {
+        sourceGlyph
         Text(model.activeList?.title ?? L10n.text("list.none"))
           .lineLimit(1)
           .truncationMode(.tail)
@@ -161,14 +202,28 @@ struct IslandRootView: View {
       header
       Divider().overlay(.white.opacity(0.12))
 
-      if model.authorization == .fullAccess {
+      if model.requestedListCreationSource != nil {
+        listCreationForm
+      } else if listPendingRename != nil {
+        listRenameForm
+      } else if model.canUseActiveList {
         reminderContent
+      } else if model.preferredEmptySource == .local,
+        model.localStoreAvailability == .available
+      {
+        localEmptyContent
+      } else if case .unavailable = model.localStoreAvailability,
+        model.authorization == .fullAccess
+      {
+        localStoreUnavailableContent
+      } else if model.authorization == .fullAccess {
+        noListsContent
       } else {
         lockedContent
       }
 
-      if model.islandState.showsQuickAdd && model.authorization == .fullAccess
-        && !model.lists.isEmpty
+      if model.islandState.showsQuickAdd && model.canUseActiveList
+        && model.requestedListCreationSource == nil && listPendingRename == nil
       {
         quickAdd
       }
@@ -181,46 +236,79 @@ struct IslandRootView: View {
 
   private var header: some View {
     HStack(spacing: 10) {
-      if model.authorization == .fullAccess {
-        Menu {
-          ForEach(model.lists) { list in
-            Button {
-              model.selectList(list.id)
-            } label: {
-              if list.id == model.activeListID {
-                Label(list.title, systemImage: "checkmark")
-              } else {
-                Text(list.title)
+      Menu {
+        if !model.iCloudLists.isEmpty {
+          Section(L10n.text("source.icloud")) {
+            ForEach(model.iCloudLists) { list in
+              listSelectionButton(list)
+            }
+          }
+        }
+
+        Section(L10n.text("source.local")) {
+          ForEach(model.localLists) { list in
+            Menu(list.title) {
+              Button {
+                model.selectList(list.id)
+              } label: {
+                Label(
+                  list.id == model.activeListID
+                    ? L10n.text("list.active") : L10n.text("list.open"),
+                  systemImage: list.id == model.activeListID ? "checkmark" : "arrow.right"
+                )
+              }
+              Button(L10n.text("list.rename")) {
+                model.cancelListCreation()
+                listPendingRename = list
+                listNameDraft = list.title
+                Task { @MainActor in listNameFocused = true }
+              }
+              Divider()
+              Button(L10n.text("list.delete"), role: .destructive) {
+                Task { await model.prepareListDeletion(list) }
               }
             }
           }
-        } label: {
-          HStack(spacing: 7) {
-            Circle().fill(accentColor).frame(width: 8, height: 8)
-            Text(model.activeList?.title ?? L10n.text("list.none"))
-              .font(.headline)
-              .lineLimit(1)
-            Image(systemName: "chevron.down")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
+          if model.localLists.isEmpty {
+            Button {
+              Task { await model.useLocal() }
+            } label: {
+              Label(L10n.text("source.use-local"), systemImage: "desktopcomputer")
+            }
           }
         }
-        .menuStyle(.borderlessButton)
-        .accessibilityLabel(Text("list.switch"))
-      } else {
+
+        Divider()
+        Button {
+          listPendingRename = nil
+          model.requestNewList()
+        } label: {
+          Label(L10n.text("list.new"), systemImage: "plus")
+        }
+      } label: {
         HStack(spacing: 7) {
           Circle().fill(accentColor).frame(width: 8, height: 8)
-          Text(model.activeList?.title ?? L10n.text("app.name"))
+          if let activeList = model.activeList {
+            Image(systemName: activeList.source.symbolName)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Text(model.activeList?.title ?? L10n.text("list.none"))
             .font(.headline)
             .lineLimit(1)
+          Image(systemName: "chevron.down")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
         }
       }
+      .menuStyle(.borderlessButton)
+      .accessibilityLabel(Text("list.switch"))
 
       Spacer()
 
       if model.isLoading {
         ProgressView().controlSize(.small)
-      } else if model.authorization == .fullAccess {
+      } else if model.canUseActiveList {
         Text("\(model.remainingCount)")
           .font(.caption.monospacedDigit())
           .foregroundStyle(.secondary)
@@ -240,6 +328,19 @@ struct IslandRootView: View {
       }
     }
     .frame(height: 30)
+  }
+
+  private func listSelectionButton(_ list: ReminderListSnapshot) -> some View {
+    Button {
+      model.selectList(list.id)
+    } label: {
+      if list.id == model.activeListID {
+        Label(list.title, systemImage: "checkmark")
+      } else {
+        Text(list.title)
+      }
+    }
+    .disabled(list.source == .iCloud && model.authorization != .fullAccess)
   }
 
   @ViewBuilder
@@ -486,6 +587,98 @@ struct IslandRootView: View {
     }
   }
 
+  private var listCreationForm: some View {
+    VStack(spacing: 14) {
+      Label(L10n.text("list.new"), systemImage: "list.bullet.badge.plus")
+        .font(.headline)
+
+      TextField(L10n.text("list.name.placeholder"), text: $listNameDraft)
+        .textFieldStyle(.roundedBorder)
+        .focused($listNameFocused)
+        .onSubmit { createListFromForm() }
+
+      Picker(
+        L10n.text("list.source"),
+        selection: Binding(
+          get: { model.requestedListCreationSource ?? .iCloud },
+          set: { model.requestedListCreationSource = $0 }
+        )
+      ) {
+        Label(L10n.text("source.icloud"), systemImage: "icloud").tag(ReminderSource.iCloud)
+        Label(L10n.text("source.local"), systemImage: "desktopcomputer").tag(ReminderSource.local)
+      }
+      .pickerStyle(.segmented)
+
+      if model.requestedListCreationSource == .iCloud, model.authorization != .fullAccess {
+        Text("list.icloud-permission-required")
+          .font(.caption)
+          .foregroundStyle(.orange)
+      }
+
+      HStack {
+        Button(L10n.text("common.cancel")) {
+          model.cancelListCreation()
+          listNameDraft = ""
+        }
+        Button(L10n.text("list.create")) { createListFromForm() }
+          .keyboardShortcut(.defaultAction)
+          .disabled(
+            listNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              || (model.requestedListCreationSource == .iCloud
+                && model.authorization != .fullAccess)
+          )
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(24)
+  }
+
+  private var listRenameForm: some View {
+    VStack(spacing: 14) {
+      Label(L10n.text("list.rename"), systemImage: "pencil")
+        .font(.headline)
+      Text(listPendingRename?.title ?? "")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      TextField(L10n.text("list.name.placeholder"), text: $listNameDraft)
+        .textFieldStyle(.roundedBorder)
+        .focused($listNameFocused)
+        .onSubmit { renameListFromForm() }
+      HStack {
+        Button(L10n.text("common.cancel")) {
+          listPendingRename = nil
+          listNameDraft = ""
+        }
+        Button(L10n.text("common.save")) { renameListFromForm() }
+          .keyboardShortcut(.defaultAction)
+          .disabled(listNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(24)
+  }
+
+  private func createListFromForm() {
+    guard let source = model.requestedListCreationSource else { return }
+    let title = listNameDraft
+    Task {
+      if await model.createList(title: title, source: source) {
+        listNameDraft = ""
+      }
+    }
+  }
+
+  private func renameListFromForm() {
+    guard let list = listPendingRename else { return }
+    let title = listNameDraft
+    Task {
+      if await model.renameList(list, title: title) {
+        listPendingRename = nil
+        listNameDraft = ""
+      }
+    }
+  }
+
   private var lockedContent: some View {
     VStack(spacing: 12) {
       Image(systemName: "lock.shield.fill")
@@ -521,6 +714,24 @@ struct IslandRootView: View {
           }
           .buttonStyle(.borderedProminent)
           .tint(accentColor)
+
+          if case .available = model.localStoreAvailability {
+            Button {
+              Task { await model.useLocal() }
+            } label: {
+              Label(L10n.text("source.use-local"), systemImage: "desktopcomputer")
+            }
+            .buttonStyle(.bordered)
+          } else {
+            HStack {
+              Button("local-store.retry") {
+                Task { await model.retryLocalStore() }
+              }
+              Button("local-store.show-in-finder") {
+                model.showLocalDataInFinder()
+              }
+            }
+          }
         }
       }
     }
@@ -540,15 +751,25 @@ struct IslandRootView: View {
         .multilineTextAlignment(.center)
 
       if isPinned {
-        HStack(spacing: 10) {
-          Button("list.open-reminders") {
-            SystemSettings.openReminders()
+        VStack(spacing: 8) {
+          HStack(spacing: 10) {
+            Button("list.new-icloud") {
+              model.requestNewList(source: .iCloud)
+            }
+            Button("source.use-local") {
+              Task { await model.useLocal() }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(accentColor)
           }
-          Button("list.check-again") {
-            Task { await model.reload() }
+          HStack(spacing: 10) {
+            Button("list.open-reminders") {
+              SystemSettings.openReminders()
+            }
+            Button("list.check-again") {
+              Task { await model.reload() }
+            }
           }
-          .buttonStyle(.borderedProminent)
-          .tint(accentColor)
         }
         .padding(.top, 4)
       }
@@ -557,10 +778,68 @@ struct IslandRootView: View {
     .padding(20)
   }
 
+  private var localEmptyContent: some View {
+    VStack(spacing: 12) {
+      Image(systemName: "desktopcomputer")
+        .font(.system(size: 30))
+        .foregroundStyle(accentColor)
+      Text("list.no-local").font(.headline)
+      Text("list.no-local.detail")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+      if isPinned {
+        Button("list.new-local") {
+          model.requestNewList(source: .local)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(accentColor)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(20)
+  }
+
+  private var localStoreUnavailableContent: some View {
+    VStack(spacing: 12) {
+      Image(systemName: "externaldrive.badge.exclamationmark")
+        .font(.system(size: 32))
+        .foregroundStyle(.orange)
+      Text("local-store.unavailable").font(.headline)
+      if case let .unavailable(message, _) = model.localStoreAvailability {
+        Text(message)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+      }
+      if isPinned {
+        HStack {
+          Button("local-store.retry") {
+            Task { await model.retryLocalStore() }
+          }
+          .buttonStyle(.borderedProminent)
+          Button("local-store.show-in-finder") {
+            model.showLocalDataInFinder()
+          }
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(24)
+  }
+
   private var accentColor: Color {
     let accent = model.activeList?.accent ?? .fallback
     return Color(
       .sRGB, red: accent.red, green: accent.green, blue: accent.blue, opacity: accent.alpha)
+  }
+
+  @ViewBuilder
+  private var sourceGlyph: some View {
+    if let source = model.activeList?.source {
+      Image(systemName: source.symbolName)
+        .accessibilityHidden(true)
+    }
   }
 
   private var hostDisplayHasNotch: Bool {
@@ -665,8 +944,12 @@ struct IslandRootView: View {
 
     let isEditingText = NSApp.keyWindow?.firstResponder is NSTextView
     if event.keyCode == 53 {
-      if model.authorization == .fullAccess, model.editingReminderID != nil {
+      if model.editingReminderID != nil {
         model.cancelEditing()
+      } else if model.requestedListCreationSource != nil {
+        model.cancelListCreation()
+      } else if listPendingRename != nil {
+        listPendingRename = nil
       } else {
         model.collapseIsland()
       }

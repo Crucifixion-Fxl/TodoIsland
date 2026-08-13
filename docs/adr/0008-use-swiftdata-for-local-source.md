@@ -1,0 +1,3 @@
+# Use SwiftData for Local Source persistence
+
+Todo Island will persist Local Reminder Lists and Reminders in a versioned SwiftData store at an app-owned Application Support URL, with CloudKit synchronization explicitly disabled. A Local Reminder store will map persistent models into the same immutable domain snapshots as EventKit behind a source-aware repository; live SwiftData models will not enter UI state, and tests can inject an in-memory container. This choice fits the macOS 14 deployment floor and structured list-to-reminder data while accepting SwiftData's migration and store-initialization failure modes; the app must preserve a failed store rather than silently resetting user data.
