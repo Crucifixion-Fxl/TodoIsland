@@ -1193,7 +1193,7 @@ struct IslandRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
     .frame(width: 18, height: 18)
-    .offset(y: -1)
+    .offset(y: -3)
     .animation(
       reduceMotion ? nil : .smooth(duration: 0.22, extraBounce: 0),
       value: model.remainingCount
