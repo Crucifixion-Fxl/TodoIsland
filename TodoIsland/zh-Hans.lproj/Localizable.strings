@@ -42,11 +42,12 @@
 "quick-add.placeholder" = "新提醒事项";
 "quick-add.accessibility" = "快速添加提醒事项标题";
 "quick-add.submit" = "添加提醒事项";
+"quick-add.new" = "新增提醒事项";
 
 "delete.title" = "删除这个提醒事项？";
 "delete.confirm" = "删除";
 
-"all-done.detail" = "这个列表没有未完成事项，可使用快速添加创建一项。";
+"all-done.detail" = "这个列表没有未完成事项。";
 "date.today" = "今天";
 
 "permission.required" = "需要提醒事项权限";

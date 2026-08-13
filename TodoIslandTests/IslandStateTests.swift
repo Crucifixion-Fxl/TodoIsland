@@ -51,6 +51,26 @@ final class IslandStateTests: XCTestCase {
   }
 
   @MainActor
+  func testQuickAddCreatesReminderInTheActiveListAndReloadsIt() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let store = QuickAddTestReminderStore()
+    let model = AppModel(store: store, defaults: defaults)
+    await model.start()
+
+    model.quickAddTitle = "  Plan tomorrow  "
+    model.createQuickReminder()
+    try await Task.sleep(for: .milliseconds(50))
+
+    XCTAssertEqual(store.createdTitle, "Plan tomorrow")
+    XCTAssertEqual(store.createdListID, "quick-add-list")
+    XCTAssertEqual(model.reminders.map(\.title), ["Plan tomorrow"])
+    XCTAssertEqual(model.quickAddTitle, "")
+  }
+
+  @MainActor
   func testLeavingBeforePreviewDelayKeepsIslandCollapsed() async throws {
     let defaults = UserDefaults(suiteName: #function)!
     defaults.removePersistentDomain(forName: #function)
@@ -81,6 +101,118 @@ final class IslandStateTests: XCTestCase {
     XCTAssertEqual(model.islandState, .preview)
 
     try await Task.sleep(for: .milliseconds(200))
+    XCTAssertEqual(model.islandState, .collapsed)
+  }
+
+  @MainActor
+  func testEmptyPinnedIslandCollapsesAfterPointerLeaves() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(store: ListSelectionTestReminderStore(), defaults: defaults)
+    await model.start()
+    XCTAssertTrue(model.reminders.isEmpty)
+
+    model.pinIsland()
+    model.setIslandHovered(true)
+    model.setIslandHovered(false)
+
+    try await Task.sleep(for: .milliseconds(600))
+
+    XCTAssertEqual(model.islandState, .collapsed)
+  }
+
+  @MainActor
+  func testEmptyPinnedIslandStaysOpenWhileQuickAddIsActive() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(store: ListSelectionTestReminderStore(), defaults: defaults)
+    await model.start()
+    model.pinIsland()
+    model.setQuickAddActive(true)
+    model.setIslandHovered(true)
+    model.setIslandHovered(false)
+
+    try await Task.sleep(for: .milliseconds(600))
+
+    XCTAssertEqual(model.islandState, .pinned)
+  }
+
+  @MainActor
+  func testEmptyPinnedIslandStaysOpenWhenQuickAddContainsADraft() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(store: ListSelectionTestReminderStore(), defaults: defaults)
+    await model.start()
+    model.pinIsland()
+    model.quickAddTitle = "Keep this draft"
+    model.setIslandHovered(true)
+    model.setIslandHovered(false)
+
+    try await Task.sleep(for: .milliseconds(600))
+
+    XCTAssertEqual(model.islandState, .pinned)
+    XCTAssertEqual(model.quickAddTitle, "Keep this draft")
+  }
+
+  @MainActor
+  func testPinnedNoListRecoveryStaysOpenAfterPointerLeaves() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(store: NoListTestReminderStore(), defaults: defaults)
+    await model.start()
+    model.pinIsland()
+    model.setIslandHovered(true)
+    model.setIslandHovered(false)
+
+    try await Task.sleep(for: .milliseconds(600))
+
+    XCTAssertTrue(model.lists.isEmpty)
+    XCTAssertEqual(model.islandState, .pinned)
+  }
+
+  @MainActor
+  func testPinnedLockedIslandStaysOpenAfterPointerLeaves() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let model = AppModel(store: HoverTestReminderStore(), defaults: defaults)
+    model.pinIsland()
+    model.setIslandHovered(true)
+    model.setIslandHovered(false)
+
+    try await Task.sleep(for: .milliseconds(600))
+
+    XCTAssertEqual(model.authorization, .denied)
+    XCTAssertEqual(model.islandState, .pinned)
+  }
+
+  @MainActor
+  func testCompletingLastReminderCollapsesAfterPointerHasLeft() async throws {
+    let defaults = UserDefaults(suiteName: #function)!
+    defaults.removePersistentDomain(forName: #function)
+    defer { defaults.removePersistentDomain(forName: #function) }
+
+    let store = CompletionFeedbackTestReminderStore()
+    let model = AppModel(store: store, defaults: defaults)
+    await model.start()
+    let reminder = try XCTUnwrap(model.reminders.first)
+    model.pinIsland()
+    model.setIslandHovered(true)
+    model.setIslandHovered(false)
+
+    model.complete(reminder)
+    try await Task.sleep(for: .milliseconds(850))
+
+    XCTAssertTrue(model.reminders.isEmpty)
     XCTAssertEqual(model.islandState, .collapsed)
   }
 
@@ -234,5 +366,53 @@ private final class CompletionFeedbackTestReminderStore: ReminderStore {
     completedReminderIDs.append(reminderID)
     pendingReminders.removeAll { $0.id == reminderID }
   }
+  func deleteReminder(id: String) async throws {}
+}
+
+@MainActor
+private final class QuickAddTestReminderStore: ReminderStore {
+  var onStoreChanged: (() -> Void)?
+  private(set) var createdTitle: String?
+  private(set) var createdListID: String?
+  private var pendingReminders: [ReminderSnapshot] = []
+
+  func authorizationStatus() -> ReminderAuthorization { .fullAccess }
+  func requestFullAccess() async throws -> Bool { true }
+  func fetchLists() async throws -> [ReminderListSnapshot] {
+    [ReminderListSnapshot(id: "quick-add-list", title: "Quick Add", accent: .fallback)]
+  }
+  func fetchPendingReminders(in listID: String) async throws -> [ReminderSnapshot] {
+    pendingReminders
+  }
+  func createReminder(title: String, in listID: String) async throws {
+    createdTitle = title
+    createdListID = listID
+    pendingReminders = [
+      ReminderSnapshot(
+        id: "created-reminder",
+        listID: listID,
+        title: title,
+        dueDateComponents: nil,
+        priority: .none,
+        isRecurring: false
+      )
+    ]
+  }
+  func updateReminder(id: String, from draft: ReminderDraft) async throws {}
+  func setCompleted(_ completed: Bool, reminderID: String) async throws {}
+  func deleteReminder(id: String) async throws {}
+}
+
+@MainActor
+private final class NoListTestReminderStore: ReminderStore {
+  var onStoreChanged: (() -> Void)?
+
+  func authorizationStatus() -> ReminderAuthorization { .fullAccess }
+  func requestFullAccess() async throws -> Bool { true }
+  func fetchLists() async throws -> [ReminderListSnapshot] { [] }
+  func fetchPendingReminders(in listID: String) async throws -> [ReminderSnapshot] { [] }
+  func createReminder(title: String, in listID: String) async throws {}
+  func updateReminder(id: String, from draft: ReminderDraft) async throws {}
+  func setCompleted(_ completed: Bool, reminderID: String) async throws {}
   func deleteReminder(id: String) async throws {}
 }

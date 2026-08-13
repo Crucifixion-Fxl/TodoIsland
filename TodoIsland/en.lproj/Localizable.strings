@@ -42,11 +42,12 @@
 "quick-add.placeholder" = "New reminder";
 "quick-add.accessibility" = "Quick Add reminder title";
 "quick-add.submit" = "Add reminder";
+"quick-add.new" = "Add Reminder";
 
 "delete.title" = "Delete this reminder?";
 "delete.confirm" = "Delete";
 
-"all-done.detail" = "There are no pending reminders in this list. Use Quick Add to create one.";
+"all-done.detail" = "There are no pending reminders in this list.";
 "date.today" = "Today";
 
 "permission.required" = "Reminders Access Required";

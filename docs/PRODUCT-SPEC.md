@@ -51,7 +51,7 @@ Hovering briefly over the Collapsed Island expands an Island Preview without tak
 
 ### Pinned Island
 
-Clicking the Island opens or converts it to a Pinned Island. The Pinned Island can become key, accepts keyboard input, and remains open while the user works.
+Clicking the Island opens or converts it to a Pinned Island. The Pinned Island can become key, accepts keyboard input, and remains open while the user works. When the Active List has no Pending Reminders, a Pinned Island closes 500 milliseconds after the pointer leaves unless Quick Add is focused or contains text; locked and no-list recovery states remain open.
 
 - `Escape` cancels an active edit or closes the Island.
 - Clicking outside closes the Island.
@@ -73,6 +73,8 @@ The expanded Island contains:
 The last Active List is restored on launch. If it no longer exists, the app falls back to the first available iCloud Reminder List.
 
 Quick Add creates a Pending Reminder in the Active List from a title followed by Enter. It initially has no Due Date or Priority. The user can then open its compact editor.
+
+When the Active List has no Pending Reminders, the All Done state presents a prominent Add Reminder action that pins the Island when necessary and focuses Quick Add.
 
 Completing a Reminder immediately changes its leading circle to a green checkmark, then removes it from the visible Pending Reminders after 200 milliseconds. Completion has no Undo action. Deleting a Reminder requires confirmation.
 
