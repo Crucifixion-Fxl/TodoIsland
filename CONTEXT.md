@@ -1,6 +1,6 @@
 # Todo Island
 
-Todo Island is a macOS accessory application for viewing and managing unfinished reminders from iCloud in a notch-attached surface.
+Todo Island is a macOS accessory application for viewing and managing unfinished reminders from iCloud and its own on-device storage in a notch-attached surface.
 
 ## Language
 
@@ -12,9 +12,29 @@ _Avoid_: Todo, task
 A Reminder that has not been completed. Todo Island presents only Pending Reminders in its normal list views.
 _Avoid_: Open todo, incomplete task
 
+**Completed Reminder**:
+A Reminder that has been marked complete. Todo Island retains Completed Reminders in their source but does not present a completed-history view.
+_Avoid_: Deleted Reminder, archived task
+
 **Reminder List**:
-A user-defined collection of Reminders in iCloud Reminders.
+A user-defined collection of Reminders owned by exactly one Reminder Source.
 _Avoid_: Calendar, category
+
+**Reminder Source**:
+The system that owns a Reminder List and its Reminders. Todo Island supports the iCloud Source and Local Source.
+_Avoid_: Account, storage mode, provider
+
+**iCloud Source**:
+The Reminder Source backed by Apple Reminders and synchronized through iCloud.
+_Avoid_: Cloud mode, Apple source
+
+**Local Source**:
+The Reminder Source privately maintained by Todo Island on this Mac and available without Apple Reminders permission. Its Reminder Lists and Reminders do not appear in Apple Reminders or synchronize through iCloud.
+_Avoid_: On My Mac, offline mode, local account
+
+**Default Local List**:
+The first Local Reminder List, automatically created with the title Todo Island the first time the user selects an empty Local Source. It is not automatically recreated after the user deliberately deletes the last Local Reminder List.
+_Avoid_: Inbox, default calendar
 
 **Active List**:
 The Reminder List currently presented in the Island. A user can switch the Active List from within the Island.
@@ -36,9 +56,9 @@ _Avoid_: Hover mode, passive popup
 The expanded, interactive Island entered by clicking it. It takes keyboard focus and remains open while the user creates or manages Reminders.
 _Avoid_: Focused popup
 
-**Locked Island**:
-An Island that cannot present or modify Reminders because Reminders access is unavailable. It explains the required access and offers the appropriate authorization or recovery action.
-_Avoid_: Onboarding, permission page
+**Locked iCloud Source**:
+An iCloud Source that cannot present or modify Reminders because Apple Reminders access is unavailable. The Island keeps Local Source navigation available while offering the appropriate iCloud authorization or recovery action.
+_Avoid_: Locked Island, onboarding, permission page
 
 **Quick Add**:
 The compact input in a Pinned Island that creates a Pending Reminder from a title alone in the Active List. A Quick Add Reminder initially has no Due Date or Priority.
@@ -49,7 +69,7 @@ The optional calendar date on which a Reminder becomes due. It may additionally 
 _Avoid_: Deadline, timestamp
 
 **Priority**:
-The optional urgency assigned to a Reminder in iCloud Reminders.
+The optional urgency assigned to a Reminder.
 _Avoid_: Importance, rank
 
 **Next Reminder**:

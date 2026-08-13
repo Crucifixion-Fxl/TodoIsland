@@ -62,6 +62,7 @@ final class AuthorizationFlowTests: XCTestCase {
 
     XCTAssertEqual(model.authorization, .denied)
     XCTAssertEqual(model.islandState, .collapsed)
+    XCTAssertEqual(model.activeListID, "authorization-list")
     XCTAssertEqual(model.editingReminderID, reminder.id)
     XCTAssertEqual(model.draft?.title, "Unsaved title")
     XCTAssertFalse(model.isEditingDraftValidated)

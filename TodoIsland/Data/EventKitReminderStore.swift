@@ -3,7 +3,8 @@ import AppKit
 import Foundation
 
 @MainActor
-final class EventKitReminderStore: ReminderStore {
+final class EventKitReminderStore: ReminderBackend {
+  let source = ReminderSource.iCloud
   var onStoreChanged: (() -> Void)?
 
   private let eventStore: EKEventStore
@@ -43,6 +44,27 @@ final class EventKitReminderStore: ReminderStore {
     let granted = try await eventStore.requestFullAccessToReminders()
     if granted { eventStore.reset() }
     return granted
+  }
+
+  func createList(title: String) async throws -> ReminderListSnapshot {
+    let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty else { throw ReminderStoreError.emptyListTitle }
+
+    let calendars = eventStore.calendars(for: .reminder).filter(Self.isICloudCalendar)
+    guard !calendars.contains(where: {
+      $0.title.compare(normalized, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }) else {
+      throw ReminderStoreError.duplicateListName
+    }
+    guard let source = Self.iCloudSource(in: eventStore) else {
+      throw ReminderStoreError.listNotFound
+    }
+
+    let calendar = EKCalendar(for: .reminder, eventStore: eventStore)
+    calendar.source = source
+    calendar.title = normalized
+    try eventStore.saveCalendar(calendar, commit: true)
+    return Self.snapshot(calendar)
   }
 
   func fetchLists() async throws -> [ReminderListSnapshot] {
@@ -123,11 +145,19 @@ final class EventKitReminderStore: ReminderStore {
       && calendar.source.title.range(of: "icloud", options: .caseInsensitive) != nil
   }
 
+  private static func iCloudSource(in eventStore: EKEventStore) -> EKSource? {
+    eventStore.sources.first {
+      $0.sourceType == .calDAV
+        && $0.title.range(of: "icloud", options: .caseInsensitive) != nil
+    }
+  }
+
   private static func snapshot(_ calendar: EKCalendar) -> ReminderListSnapshot {
     ReminderListSnapshot(
       id: calendar.calendarIdentifier,
       title: calendar.title,
-      accent: accent(from: calendar.cgColor)
+      accent: accent(from: calendar.cgColor),
+      source: .iCloud
     )
   }
 
@@ -135,6 +165,7 @@ final class EventKitReminderStore: ReminderStore {
     ReminderSnapshot(
       id: reminder.calendarItemIdentifier,
       listID: reminder.calendar.calendarIdentifier,
+      source: .iCloud,
       title: reminder.title,
       dueDateComponents: reminder.dueDateComponents,
       priority: ReminderPriority(eventKitValue: reminder.priority),

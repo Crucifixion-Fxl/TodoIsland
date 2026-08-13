@@ -1,9 +1,34 @@
 import Foundation
 
+enum ReminderSource: String, CaseIterable, Codable, Hashable, Sendable {
+  case iCloud
+  case local
+
+  var symbolName: String {
+    switch self {
+    case .iCloud: "icloud"
+    case .local: "desktopcomputer"
+    }
+  }
+}
+
 struct ReminderListSnapshot: Identifiable, Hashable, Sendable {
   let id: String
   let title: String
   let accent: AccentSnapshot
+  let source: ReminderSource
+
+  init(
+    id: String,
+    title: String,
+    accent: AccentSnapshot,
+    source: ReminderSource = .iCloud
+  ) {
+    self.id = id
+    self.title = title
+    self.accent = accent
+    self.source = source
+  }
 }
 
 struct AccentSnapshot: Hashable, Sendable {
@@ -43,10 +68,29 @@ enum ReminderPriority: Int, CaseIterable, Codable, Hashable, Sendable {
 struct ReminderSnapshot: Identifiable, Hashable, Sendable {
   let id: String
   let listID: String
+  let source: ReminderSource
   var title: String
   var dueDateComponents: DateComponents?
   var priority: ReminderPriority
   let isRecurring: Bool
+
+  init(
+    id: String,
+    listID: String,
+    source: ReminderSource = .iCloud,
+    title: String,
+    dueDateComponents: DateComponents?,
+    priority: ReminderPriority,
+    isRecurring: Bool
+  ) {
+    self.id = id
+    self.listID = listID
+    self.source = source
+    self.title = title
+    self.dueDateComponents = dueDateComponents
+    self.priority = priority
+    self.isRecurring = isRecurring
+  }
 
   func dueDate(in calendar: Calendar) -> Date? {
     guard let components = dueDateComponents else { return nil }
@@ -110,4 +154,15 @@ enum ReminderAuthorization: Equatable, Sendable {
   case denied
   case restricted
   case fullAccess
+}
+
+struct ReminderListDeletionSummary: Equatable, Sendable {
+  let list: ReminderListSnapshot
+  let pendingCount: Int
+  let completedCount: Int
+}
+
+enum LocalStoreAvailability: Equatable, Sendable {
+  case available
+  case unavailable(message: String, dataURL: URL?)
 }

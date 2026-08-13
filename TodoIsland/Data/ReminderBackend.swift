@@ -1,0 +1,50 @@
+import Foundation
+
+@MainActor
+protocol ReminderBackend: AnyObject {
+  var source: ReminderSource { get }
+  var onStoreChanged: (() -> Void)? { get set }
+
+  func fetchLists() async throws -> [ReminderListSnapshot]
+  func fetchPendingReminders(in listID: String) async throws -> [ReminderSnapshot]
+  func createReminder(title: String, in listID: String) async throws
+  func updateReminder(id: String, from draft: ReminderDraft) async throws
+  func setCompleted(_ completed: Bool, reminderID: String) async throws
+  func deleteReminder(id: String) async throws
+  func createList(title: String) async throws -> ReminderListSnapshot
+  func renameList(id: String, title: String) async throws
+  func deletionSummary(forListID id: String) async throws -> ReminderListDeletionSummary
+  func deleteList(id: String) async throws
+}
+
+extension ReminderBackend {
+  func renameList(id: String, title: String) async throws {
+    throw ReminderStoreError.operationUnsupported
+  }
+
+  func deletionSummary(forListID id: String) async throws -> ReminderListDeletionSummary {
+    throw ReminderStoreError.operationUnsupported
+  }
+
+  func deleteList(id: String) async throws {
+    throw ReminderStoreError.operationUnsupported
+  }
+}
+
+enum ReminderStoreIdentity {
+  private static let separator = ":"
+
+  static func namespaced(_ rawID: String, source: ReminderSource) -> String {
+    source.rawValue + separator + rawID
+  }
+
+  static func split(_ id: String) -> (source: ReminderSource, rawID: String)? {
+    for source in ReminderSource.allCases {
+      let prefix = source.rawValue + separator
+      if id.hasPrefix(prefix) {
+        return (source, String(id.dropFirst(prefix.count)))
+      }
+    }
+    return nil
+  }
+}

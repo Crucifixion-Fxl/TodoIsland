@@ -1,5 +1,5 @@
 "app.name" = "Todo Island";
-"about.detail" = "A private, on-device island for your iCloud Reminders.";
+"about.detail" = "A private, on-device island for iCloud and Todo Island local reminders.";
 
 "common.ok" = "OK";
 "common.cancel" = "Cancel";
@@ -9,9 +9,13 @@
 "error.list-not-found" = "The selected reminder list is no longer available.";
 "error.reminder-not-found" = "This reminder is no longer available. Todo Island will refresh the list.";
 "error.empty-title" = "A reminder title cannot be empty.";
+"error.empty-list-title" = "A list name cannot be empty.";
+"error.duplicate-list-name" = "A list with this name already exists in the selected source.";
+"error.operation-unsupported" = "This action is not available for the selected source.";
+"error.local-store-unavailable" = "Todo Island local storage is unavailable. Your existing data has not been changed.";
 
-"island.locked" = "Reminders access required";
-"island.locked.accessibility" = "Todo Island is locked. Reminders access is required.";
+"island.locked" = "Choose iCloud or Local";
+"island.locked.accessibility" = "Choose iCloud access or Todo Island local reminders.";
 "island.all-done" = "All Done";
 "island.close" = "Close Todo Island";
 "island.collapsed.accessibility" = "List: %@. %d reminders remaining.";
@@ -19,9 +23,28 @@
 "list.none" = "No List";
 "list.switch" = "Switch reminder list";
 "list.no-icloud" = "No iCloud Lists";
-"list.no-icloud.detail" = "Create an iCloud reminder list in Reminders, then return to Todo Island.";
+"list.no-icloud.detail" = "Create an iCloud list here, or switch to Todo Island Local.";
+"list.no-local" = "No Local Lists";
+"list.no-local.detail" = "Create a list when you want to use Todo Island local reminders again.";
 "list.open-reminders" = "Open Reminders";
 "list.check-again" = "Check Again";
+"list.new" = "New List";
+"list.new-icloud" = "New iCloud List";
+"list.new-local" = "New Local List";
+"list.create" = "Create List";
+"list.rename" = "Rename";
+"list.delete" = "Delete List";
+"list.open" = "Open List";
+"list.active" = "Active List";
+"list.name.placeholder" = "List name";
+"list.source" = "Source";
+"list.icloud-permission-required" = "Allow Reminders access before creating an iCloud list.";
+"list.delete.title" = "Delete this local list?";
+"list.delete.confirm" = "Delete List";
+"list.delete.detail" = "“%@” contains %d pending and %d completed reminders. All of them will be permanently deleted.";
+"source.icloud" = "iCloud";
+"source.local" = "Todo Island Local";
+"source.use-local" = "Use Local";
 "reminders.remaining" = "%d reminders remaining";
 
 "reminder.complete" = "Complete %@";
@@ -52,8 +75,9 @@
 
 "permission.required" = "Reminders Access Required";
 "permission.required.detail" = "Apple does not offer read-only Reminders permission. Todo Island uses full access only to display and manage the iCloud reminders you choose.";
-"permission.privacy" = "Reminder content stays on this Mac. There is no server, analytics, or content logging.";
+"permission.privacy" = "Todo Island does not upload reminder content. iCloud sync remains managed by Apple Reminders.";
 "permission.allow" = "Allow Reminders Access";
+"permission.use-local" = "Use Local Without Access";
 "permission.open-island" = "Open Island to Authorize";
 "permission.open-settings" = "Open System Settings";
 "permission.full-access" = "Full Access";
@@ -62,7 +86,7 @@
 "permission.restricted" = "Restricted";
 
 "settings.title" = "Todo Island Settings";
-"settings.reminders" = "Reminders";
+"settings.reminders" = "iCloud Reminders";
 "settings.permission" = "Permission";
 "settings.island" = "Island";
 "settings.fullscreen" = "Full Screen";
@@ -70,6 +94,13 @@
 "settings.launch-at-login" = "Launch at Login";
 "settings.about" = "About";
 "settings.privacy" = "Todo Island processes Reminder content only on this Mac.";
+"settings.local-source" = "Todo Island Local";
+"settings.local-storage" = "Storage";
+
+"local-store.available" = "Available";
+"local-store.unavailable" = "Local Storage Unavailable";
+"local-store.retry" = "Retry";
+"local-store.show-in-finder" = "Show Data in Finder";
 
 "menu.open" = "Open Todo Island";
 "menu.settings" = "Settings…";

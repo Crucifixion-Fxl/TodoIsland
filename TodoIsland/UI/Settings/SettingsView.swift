@@ -27,6 +27,24 @@ struct SettingsView: View {
         }
       }
 
+      Section("settings.local-source") {
+        LabeledContent("settings.local-storage") {
+          Text(localStorageLabel)
+            .foregroundStyle(localStorageColor)
+        }
+
+        if case .unavailable = model.localStoreAvailability {
+          HStack {
+            Button("local-store.retry") {
+              Task { await model.retryLocalStore() }
+            }
+            Button("local-store.show-in-finder") {
+              model.showLocalDataInFinder()
+            }
+          }
+        }
+      }
+
       Section("settings.island") {
         LabeledContent("settings.fullscreen") {
           Text("settings.fullscreen.policy")
@@ -82,7 +100,18 @@ struct SettingsView: View {
     model.authorization == .fullAccess ? .green : .orange
   }
 
+  private var localStorageLabel: LocalizedStringKey {
+    switch model.localStoreAvailability {
+    case .available: "local-store.available"
+    case .unavailable: "local-store.unavailable"
+    }
+  }
+
+  private var localStorageColor: Color {
+    model.localStoreAvailability == .available ? .green : .orange
+  }
+
   private var appVersion: String {
-    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.1"
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0"
   }
 }
