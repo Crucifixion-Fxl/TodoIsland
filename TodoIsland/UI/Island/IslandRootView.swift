@@ -112,7 +112,7 @@ struct IslandRootView: View {
       .padding(.horizontal, 14)
       .frame(maxHeight: .infinity)
       .accessibilityLabel(Text("island.locked.accessibility"))
-    } else if selectedDisplayHasNotch {
+    } else if hostDisplayHasNotch {
       HStack(spacing: 0) {
         Text(model.activeList?.title ?? L10n.text("list.none"))
           .font(.system(size: 11, weight: .semibold))
@@ -123,7 +123,7 @@ struct IslandRootView: View {
           .padding(.leading, collapsedOuterInset)
 
         Color.clear
-          .frame(width: selectedPhysicalNotchWidth)
+          .frame(width: hostPhysicalNotchWidth)
 
         remainingCountRing
           .frame(width: collapsedSideContentWidth, alignment: .trailing)
@@ -160,7 +160,9 @@ struct IslandRootView: View {
         lockedContent
       }
 
-      if model.islandState.showsQuickAdd && model.authorization == .fullAccess {
+      if model.islandState.showsQuickAdd && model.authorization == .fullAccess
+        && !model.lists.isEmpty
+      {
         quickAdd
       }
     }
@@ -236,7 +238,7 @@ struct IslandRootView: View {
   @ViewBuilder
   private var reminderContent: some View {
     if model.lists.isEmpty {
-      centeredMessage(icon: "list.bullet", title: "list.no-icloud", detail: "list.no-icloud.detail")
+      noListsContent
     } else if model.reminders.isEmpty {
       centeredMessage(
         icon: "checkmark.circle.fill", title: "island.all-done", detail: "all-done.detail")
@@ -411,6 +413,7 @@ struct IslandRootView: View {
         Button(L10n.text("common.cancel")) { model.cancelEditing() }
         Button(L10n.text("common.save")) { model.saveEditing() }
           .keyboardShortcut(.defaultAction)
+          .disabled(!model.canSaveEditingDraft)
       }
     }
     .padding(10)
@@ -463,25 +466,64 @@ struct IslandRootView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
+      Text("permission.privacy")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
       if isPinned {
-        Button(
-          L10n.text(
-            model.authorization == .notDetermined
-              ? "onboarding.allow"
-              : "permission.open-settings")
-        ) {
-          if model.authorization == .notDetermined {
-            Task { await model.requestAccess() }
-          } else {
-            SystemSettings.openRemindersPrivacy()
+        if model.isRequestingAccess {
+          ProgressView()
+            .controlSize(.small)
+            .tint(accentColor)
+        } else {
+          Button(
+            L10n.text(
+              model.authorization == .notDetermined
+                ? "permission.allow"
+                : "permission.open-settings")
+          ) {
+            if model.authorization == .notDetermined {
+              Task { await model.requestAccess() }
+            } else {
+              SystemSettings.openRemindersPrivacy()
+            }
           }
+          .buttonStyle(.borderedProminent)
+          .tint(accentColor)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(accentColor)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .padding(24)
+  }
+
+  private var noListsContent: some View {
+    VStack(spacing: 10) {
+      Image(systemName: "list.bullet")
+        .font(.system(size: 30))
+        .foregroundStyle(accentColor)
+      Text("list.no-icloud").font(.headline)
+      Text("list.no-icloud.detail")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+
+      if isPinned {
+        HStack(spacing: 10) {
+          Button("list.open-reminders") {
+            SystemSettings.openReminders()
+          }
+          Button("list.check-again") {
+            Task { await model.reload() }
+          }
+          .buttonStyle(.borderedProminent)
+          .tint(accentColor)
+        }
+        .padding(.top, 4)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(20)
   }
 
   private func centeredMessage(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey)
@@ -507,17 +549,18 @@ struct IslandRootView: View {
       .sRGB, red: accent.red, green: accent.green, blue: accent.blue, opacity: accent.alpha)
   }
 
-  private var selectedDisplayHasNotch: Bool {
-    model.displays.first { $0.id == model.selectedDisplayID }?.hasPhysicalNotch ?? false
+  private var hostDisplayHasNotch: Bool {
+    guard let screen = DisplaySupport.screen(id: model.hostDisplayID) else { return false }
+    return DisplaySupport.metrics(for: screen).hasPhysicalNotch
   }
 
-  private var selectedPhysicalNotchWidth: CGFloat {
-    guard let screen = DisplaySupport.screen(id: model.selectedDisplayID) else { return 0 }
+  private var hostPhysicalNotchWidth: CGFloat {
+    guard let screen = DisplaySupport.screen(id: model.hostDisplayID) else { return 0 }
     return DisplaySupport.metrics(for: screen).physicalNotchWidth
   }
 
   private var collapsedSideWidth: CGFloat {
-    max(0, (islandSurfaceSize.width - selectedPhysicalNotchWidth) / 2)
+    max(0, (islandSurfaceSize.width - hostPhysicalNotchWidth) / 2)
   }
 
   private var collapsedOuterInset: CGFloat { 12 }
@@ -527,7 +570,7 @@ struct IslandRootView: View {
   }
 
   private var islandSurfaceSize: CGSize {
-    guard let screen = DisplaySupport.screen(id: model.selectedDisplayID) else { return .zero }
+    guard let screen = DisplaySupport.screen(id: model.hostDisplayID) else { return .zero }
     return DisplayGeometryCalculator.geometry(for: DisplaySupport.metrics(for: screen))
       .size(for: model.islandState)
   }
@@ -608,7 +651,11 @@ struct IslandRootView: View {
 
     let isEditingText = NSApp.keyWindow?.firstResponder is NSTextView
     if event.keyCode == 53 {
-      if model.editingReminderID != nil { model.cancelEditing() } else { model.collapseIsland() }
+      if model.authorization == .fullAccess, model.editingReminderID != nil {
+        model.cancelEditing()
+      } else {
+        model.collapseIsland()
+      }
       return true
     }
     if isEditingText { return false }

@@ -2,7 +2,7 @@
 
 ## Product
 
-Todo Island is a personal macOS accessory application that presents and manages unfinished iCloud Reminders in a Dynamic Island-style surface attached to the top center of one display.
+Todo Island is a personal macOS accessory application that presents and manages unfinished iCloud Reminders in a Dynamic Island-style surface attached to the top center of one automatically determined Host Display.
 
 - Product name: `Todo Island`
 - Bundle identifier: `com.fxl.TodoIsland`
@@ -97,11 +97,20 @@ Todo Island supports VoiceOver, keyboard navigation, increased contrast where ap
 
 ## Displays and Full Screen
 
-Only the Selected Display hosts an Island. A physical notch is preferred; displays without one use the top-center capsule fallback.
+Only the automatically determined Host Display hosts an Island. The application does not ask the user to select a display. A Host Display with a physical notch uses the notch-attached layout; one without a notch uses the top-center capsule fallback.
+
+Whenever Host Display detection runs, the display containing the mouse pointer is selected. Whether that display has a physical notch affects the Island geometry and full-screen behavior, not its eligibility to become the Host Display.
+
+While the Island is collapsed, the pointer must remain on a different display for approximately 350 milliseconds before that display becomes the Host Display. Brief boundary crossings do not move the Island. An Island Preview or Pinned Island locks its Host Display until it collapses, at which point detection resumes.
+
+If the Host Display is disconnected, the Island immediately moves to the pointer's remaining display. This forced migration preserves the current presentation state, editing draft, and keyboard focus.
+
+A normal collapsed Host Display change uses a brief fade out on the old display and fade in on the new display. With Reduce Motion enabled, the Island changes displays immediately.
 
 - On a physical-notch display, the Island remains available in full-screen spaces.
-- On a display without a notch, the fallback capsule hides while an application is full screen.
-- Screen attachment, removal, resolution changes, and Selected Display changes recalculate the Island geometry.
+- On a display without a notch, the collapsed fallback capsule hides while an application is full screen. That display remains the Host Display, and the capsule returns when full screen ends.
+- A first-launch authorization Island or a Pinned Island explicitly opened by the user can appear above a full-screen application. When it collapses, the normal hiding rule resumes.
+- Screen attachment, removal, resolution changes, and Host Display changes recalculate the Island geometry.
 
 ## Application Surfaces
 
@@ -116,7 +125,6 @@ Todo Island is an accessory application with no Dock icon. Its menu-bar icon ope
 Settings contains:
 
 - Reminders authorization status and an Open System Settings action;
-- Selected Display;
 - Launch at Login;
 - full-screen hiding behavior;
 - About; and
@@ -124,11 +132,21 @@ Settings contains:
 
 Launch at Login is disabled by default.
 
-## Onboarding and Authorization
+## In-Island Authorization
 
-First launch uses a normal application window to explain why full Reminders access is required and that Reminder content stays on the device. After authorization, the user chooses the initial Active List and Selected Display.
+On first launch, Todo Island opens a Pinned Island that explains why full Reminders access is required, states that Reminder content stays on the device, and offers an Allow Access action. The application does not use a separate onboarding window. The macOS authorization prompt remains a system-owned surface triggered by that action.
 
-If access is denied or restricted, the Island shows a locked state and the onboarding and menu-bar surfaces offer Open System Settings. The application does not repeatedly prompt.
+If access is granted, the same Pinned Island immediately replaces its authorization content with the Active List and its Reminders. If access is denied or restricted, it remains pinned in a locked state and replaces the action with Open System Settings. Settings retains the authorization status and the same recovery action. The application does not repeatedly prompt.
+
+The user may dismiss the first-launch authorization Island with Escape or by clicking outside it. The Island then remains available in its collapsed locked state and can be reopened to continue authorization. Dismissing it does not quit the application.
+
+After authorization, the app restores the last valid Active List. If it is unavailable or none has been saved, the app automatically uses the first available iCloud Reminder List. The user can switch the Active List from within the Island.
+
+If no iCloud Reminder List is available, the Pinned Island shows an empty state with Open Reminders and Check Again actions. Todo Island does not create a Reminder List on the user's behalf.
+
+If access is revoked while Todo Island is running, the Island preserves its current presentation state and replaces its Reminder content with the locked state. It does not expand itself or take focus solely because authorization changed.
+
+If authorization is revoked during an edit, the unsaved draft remains in memory but cannot be saved. If access returns, Todo Island refetches the Reminder, validates that the draft still has a valid target, and lets the user explicitly save it. Authorization restoration never writes a draft automatically.
 
 The app uses:
 
@@ -148,7 +166,7 @@ EventKit identifiers are treated as recoverable references rather than permanent
 
 - Swift 6
 - AppKit window, menu-bar, activation, display, and focus coordination
-- SwiftUI Island, onboarding, editor, and settings views
+- SwiftUI Island, authorization, editor, and settings views
 - EventKit repository behind an application-owned protocol
 - ServiceManagement launch-at-login integration
 - Swift Testing or XCTest for deterministic logic
@@ -163,7 +181,7 @@ The Island shell is an independent implementation informed by boring.notch's pub
 - A locally signed `.app` launches on the current Mac.
 - Unit tests cover Reminder ordering, presentation mapping, Island state transitions, and display geometry.
 - The application has no Dock icon and its menu-bar entry remains usable when the Island cannot be shown.
-- Onboarding correctly handles not-determined, full-access, denied, and restricted states.
+- In-Island authorization correctly handles not-determined, full-access, denied, and restricted states.
 - The app reads and performs the agreed CRUD operations against real iCloud Reminders.
 - Active List switching, Quick Add, compact editing, 200-millisecond completion feedback, and confirmed deletion work.
 - External Reminders changes appear after EventKit change notifications.
@@ -181,5 +199,5 @@ The Island shell is an independent implementation informed by boring.notch's pub
 3. Implement authorization, iCloud list filtering, CRUD, refresh, and failure states.
 4. Implement the AppKit Island window, display geometry, state and focus coordination.
 5. Implement the SwiftUI collapsed, Preview, Pinned, list, editor, and Quick Add surfaces.
-6. Implement menu-bar, onboarding, settings, launch at login, localization, accessibility, and artwork.
+6. Implement menu-bar, in-Island authorization, settings, launch at login, localization, accessibility, and artwork.
 7. Build, run automated tests, and perform real EventKit and display acceptance checks.

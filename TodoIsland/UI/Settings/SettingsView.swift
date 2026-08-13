@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
   @EnvironmentObject private var model: AppModel
   @ObservedObject private var launchAtLogin = LaunchAtLoginService.shared
+  let openIsland: () -> Void
 
   var body: some View {
     Form {
@@ -13,30 +14,20 @@ struct SettingsView: View {
         }
 
         if model.authorization != .fullAccess {
-          Button("permission.open-settings") {
-            SystemSettings.openRemindersPrivacy()
+          Button(
+            model.authorization == .notDetermined
+              ? "permission.open-island" : "permission.open-settings"
+          ) {
+            if model.authorization == .notDetermined {
+              openIsland()
+            } else {
+              SystemSettings.openRemindersPrivacy()
+            }
           }
         }
       }
 
       Section("settings.island") {
-        Picker(
-          L10n.text("settings.display"),
-          selection: Binding(
-            get: { model.selectedDisplayID ?? "" },
-            set: { model.selectedDisplayID = $0 }
-          )
-        ) {
-          ForEach(model.displays) { display in
-            Text(
-              display.hasPhysicalNotch
-                ? String(format: L10n.text("display.notched"), display.name)
-                : display.name
-            )
-            .tag(display.id)
-          }
-        }
-
         LabeledContent("settings.fullscreen") {
           Text("settings.fullscreen.policy")
             .foregroundStyle(.secondary)
@@ -52,7 +43,7 @@ struct SettingsView: View {
       }
 
       Section("settings.about") {
-        LabeledContent("app.name", value: "1.0")
+        LabeledContent("app.name", value: appVersion)
         Text("settings.privacy")
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -63,7 +54,6 @@ struct SettingsView: View {
     .padding(16)
     .frame(width: 520, height: 410)
     .task {
-      model.reloadDisplays()
       launchAtLogin.refresh()
     }
     .alert(
@@ -90,5 +80,9 @@ struct SettingsView: View {
 
   private var permissionColor: Color {
     model.authorization == .fullAccess ? .green : .orange
+  }
+
+  private var appVersion: String {
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.0"
   }
 }

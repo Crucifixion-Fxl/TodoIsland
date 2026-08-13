@@ -1,0 +1,3 @@
+# Automatically follow the pointer display
+
+Todo Island will host one Island on the display containing the mouse pointer instead of persisting a user-selected display. To balance relevance with visual stability, a collapsed Island follows the pointer only after it remains on another display for about 350 milliseconds, while Preview and Pinned states lock their Host Display; disconnecting that display forces an immediate migration that preserves interaction state. This makes the Island available where the user is working without adding display settings or allowing incidental pointer movement to disrupt an active interaction.

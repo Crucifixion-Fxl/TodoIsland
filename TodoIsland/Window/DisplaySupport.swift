@@ -1,31 +1,111 @@
 import AppKit
 import CoreGraphics
 
-struct DisplaySnapshot: Identifiable, Hashable, Sendable {
-  let id: String
-  let name: String
-  let hasPhysicalNotch: Bool
+enum HostDisplayChangeReason: Equatable, Sendable {
+  case initial
+  case pointerDwell
+  case disconnected
+}
+
+struct HostDisplayChange: Equatable, Sendable {
+  let displayID: String?
+  let reason: HostDisplayChangeReason
+}
+
+struct HostDisplayTracker: Equatable, Sendable {
+  private(set) var hostDisplayID: String?
+  private var candidateDisplayID: String?
+  private var candidateSince: TimeInterval?
+  let dwellInterval: TimeInterval
+
+  init(hostDisplayID: String? = nil, dwellInterval: TimeInterval = 0.35) {
+    self.hostDisplayID = hostDisplayID
+    self.dwellInterval = dwellInterval
+  }
+
+  mutating func observe(
+    pointerDisplayID: String?,
+    fallbackDisplayID: String?,
+    availableDisplayIDs: Set<String>,
+    locksHostDisplay: Bool,
+    now: TimeInterval
+  ) -> HostDisplayChange? {
+    let pointerDisplayID = pointerDisplayID.flatMap {
+      availableDisplayIDs.contains($0) ? $0 : nil
+    }
+    let fallbackDisplayID = fallbackDisplayID.flatMap {
+      availableDisplayIDs.contains($0) ? $0 : nil
+    }
+
+    guard !availableDisplayIDs.isEmpty else {
+      resetCandidate()
+      guard hostDisplayID != nil else { return nil }
+      hostDisplayID = nil
+      return HostDisplayChange(displayID: nil, reason: .disconnected)
+    }
+
+    guard let hostDisplayID else {
+      let destination = pointerDisplayID ?? fallbackDisplayID ?? availableDisplayIDs.sorted().first
+      self.hostDisplayID = destination
+      resetCandidate()
+      return HostDisplayChange(displayID: destination, reason: .initial)
+    }
+
+    guard availableDisplayIDs.contains(hostDisplayID) else {
+      let destination = pointerDisplayID ?? fallbackDisplayID ?? availableDisplayIDs.sorted().first
+      self.hostDisplayID = destination
+      resetCandidate()
+      return HostDisplayChange(displayID: destination, reason: .disconnected)
+    }
+
+    guard !locksHostDisplay else {
+      resetCandidate()
+      return nil
+    }
+
+    guard let pointerDisplayID, pointerDisplayID != hostDisplayID else {
+      resetCandidate()
+      return nil
+    }
+
+    if candidateDisplayID != pointerDisplayID {
+      candidateDisplayID = pointerDisplayID
+      candidateSince = now
+      return nil
+    }
+
+    guard let candidateSince, now - candidateSince >= dwellInterval else { return nil }
+    self.hostDisplayID = pointerDisplayID
+    resetCandidate()
+    return HostDisplayChange(displayID: pointerDisplayID, reason: .pointerDwell)
+  }
+
+  private mutating func resetCandidate() {
+    candidateDisplayID = nil
+    candidateSince = nil
+  }
 }
 
 @MainActor
 enum DisplaySupport {
-  static func snapshots() -> [DisplaySnapshot] {
-    NSScreen.screens.compactMap { screen in
-      guard let id = screen.todoIslandDisplayID else { return nil }
-      return DisplaySnapshot(
-        id: id,
-        name: screen.localizedName,
-        hasPhysicalNotch: screen.safeAreaInsets.top > 0
-      )
-    }
+  static func screenContainingPointer() -> NSScreen? {
+    let pointerLocation = NSEvent.mouseLocation
+    return NSScreen.screens.first { $0.frame.contains(pointerLocation) }
+  }
+
+  static func fallbackScreen() -> NSScreen? {
+    screenContainingPointer() ?? NSScreen.main ?? NSScreen.screens.first
+  }
+
+  static func availableDisplayIDs() -> Set<String> {
+    Set(NSScreen.screens.compactMap(\.todoIslandDisplayID))
   }
 
   static func screen(id: String?) -> NSScreen? {
     if let id, let exact = NSScreen.screens.first(where: { $0.todoIslandDisplayID == id }) {
       return exact
     }
-    return NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main
-      ?? NSScreen.screens.first
+    return id == nil ? fallbackScreen() : nil
   }
 
   static func metrics(for screen: NSScreen) -> DisplayMetrics {
