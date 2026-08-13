@@ -72,7 +72,14 @@ struct IslandRootView: View {
       .onChange(of: model.editingReminderID) { _, id in
         if id != nil { editorTitleFocused = true }
       }
+      .onChange(of: quickAddFocused) { _, focused in
+        model.setQuickAddActive(focused)
+      }
       .onChange(of: model.islandState) { _, state in
+        if state == .collapsed {
+          quickAddFocused = false
+          return
+        }
         guard state == .pinned, focusQuickAddAfterPinning else { return }
         focusQuickAddAfterPinning = false
         Task { @MainActor in quickAddFocused = true }
@@ -240,8 +247,7 @@ struct IslandRootView: View {
     if model.lists.isEmpty {
       noListsContent
     } else if model.reminders.isEmpty {
-      centeredMessage(
-        icon: "checkmark.circle.fill", title: "island.all-done", detail: "all-done.detail")
+      allDoneContent
     } else {
       ScrollViewReader { proxy in
         ScrollView {
@@ -445,14 +451,39 @@ struct IslandRootView: View {
     .contentShape(Rectangle())
     .simultaneousGesture(
       TapGesture().onEnded {
-        if isPinned {
-          quickAddFocused = true
-        } else {
-          focusQuickAddAfterPinning = true
-          model.pinIsland()
-        }
+        focusQuickAdd()
       }
     )
+  }
+
+  private var allDoneContent: some View {
+    VStack(spacing: 10) {
+      Image(systemName: "checkmark.circle.fill")
+        .font(.system(size: 30))
+        .foregroundStyle(accentColor)
+      Text("island.all-done").font(.headline)
+      Text("all-done.detail")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+      Button(action: focusQuickAdd) {
+        Label("quick-add.new", systemImage: "plus")
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(accentColor)
+      .padding(.top, 2)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(20)
+  }
+
+  private func focusQuickAdd() {
+    if isPinned {
+      quickAddFocused = true
+    } else {
+      focusQuickAddAfterPinning = true
+      model.pinIsland()
+    }
   }
 
   private var lockedContent: some View {
@@ -521,23 +552,6 @@ struct IslandRootView: View {
         }
         .padding(.top, 4)
       }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .padding(20)
-  }
-
-  private func centeredMessage(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey)
-    -> some View
-  {
-    VStack(spacing: 8) {
-      Image(systemName: icon)
-        .font(.system(size: 30))
-        .foregroundStyle(accentColor)
-      Text(title).font(.headline)
-      Text(detail)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .padding(20)

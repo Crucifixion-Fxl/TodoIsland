@@ -29,6 +29,7 @@ final class AppModel: ObservableObject {
   private var refreshTask: Task<Void, Never>?
   private var hoverTask: Task<Void, Never>?
   private var isPointerInsideIsland = false
+  private var isQuickAddActive = false
 
   private enum Keys {
     static let activeListID = "active-list-id"
@@ -97,7 +98,10 @@ final class AppModel: ObservableObject {
   func reload() async {
     guard authorization == .fullAccess else { return }
     isLoading = true
-    defer { isLoading = false }
+    defer {
+      isLoading = false
+      schedulePointerExitCollapseIfNeeded()
+    }
 
     do {
       let newLists = try await store.fetchLists()
@@ -252,16 +256,16 @@ final class AppModel: ObservableObject {
         islandState = .preview
       }
     } else {
-      guard islandState == .preview else { return }
-      hoverTask = Task {
-        try? await Task.sleep(for: .milliseconds(500))
-        guard
-          !Task.isCancelled,
-          !isPointerInsideIsland,
-          islandState == .preview
-        else { return }
-        islandState = .collapsed
-      }
+      schedulePointerExitCollapseIfNeeded()
+    }
+  }
+
+  func setQuickAddActive(_ active: Bool) {
+    guard isQuickAddActive != active else { return }
+    isQuickAddActive = active
+    hoverTask?.cancel()
+    if !active {
+      schedulePointerExitCollapseIfNeeded()
     }
   }
 
@@ -273,6 +277,7 @@ final class AppModel: ObservableObject {
   func collapseIsland() {
     hoverTask?.cancel()
     isPointerInsideIsland = false
+    isQuickAddActive = false
     if authorization == .fullAccess {
       cancelEditing()
     }
@@ -304,6 +309,35 @@ final class AppModel: ObservableObject {
       guard !Task.isCancelled else { return }
       await reload()
     }
+  }
+
+  private func schedulePointerExitCollapseIfNeeded() {
+    guard !isPointerInsideIsland, shouldCollapseAfterPointerExit else { return }
+    hoverTask?.cancel()
+    hoverTask = Task {
+      try? await Task.sleep(for: .milliseconds(500))
+      guard
+        !Task.isCancelled,
+        !isPointerInsideIsland,
+        shouldCollapseAfterPointerExit
+      else { return }
+      collapseIsland()
+    }
+  }
+
+  private var shouldCollapseAfterPointerExit: Bool {
+    if islandState == .preview { return true }
+    guard
+      islandState == .pinned,
+      authorization == .fullAccess,
+      activeListID != nil,
+      !isLoading,
+      reminders.isEmpty,
+      editingReminderID == nil,
+      !isQuickAddActive,
+      quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return false }
+    return true
   }
 
   private func removeCompletedReminder(id: String) {
