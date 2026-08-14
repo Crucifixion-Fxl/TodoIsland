@@ -1,5 +1,12 @@
 import Foundation
 
+enum CollapsedIslandVisibility: String, CaseIterable, Equatable, Identifiable, Sendable {
+  case alwaysVisible = "always-visible"
+  case autoHide = "auto-hide"
+
+  var id: Self { self }
+}
+
 enum IslandPresentationState: Equatable, Sendable {
   case collapsed
   case preview

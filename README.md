@@ -7,7 +7,8 @@ Todo Island is a native macOS 14+ menu-bar application that presents and manages
 1. Open `TodoIsland.xcodeproj` in Xcode 26 or newer.
 2. Select the `TodoIsland` scheme and **My Mac** destination.
 3. Run the application.
-4. In the Pinned Island, grant Reminders access for iCloud or choose **Use Local** to work without that permission.
+4. In the Pinned Island, choose whether the Collapsed Island stays visible or hides automatically.
+5. Grant Reminders access for iCloud or choose **Use Local** to work without that permission.
 
 The checked-in project uses `Sign to Run Locally`, the bundle identifier `com.fxl.TodoIsland`, the App Sandbox, and the Reminders calendar entitlement. Configure a Personal Team or Developer ID only when distributing to another Mac.
 

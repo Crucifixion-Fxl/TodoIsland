@@ -44,6 +44,30 @@ _Avoid_: Selected calendar, current category
 The top-center surface that is visually attached to a physical display notch, or shown as a top-center capsule on a display without one.
 _Avoid_: Popup, widget, panel
 
+**Collapsed Island**:
+The compact Island that shows the Active List identity and Pending Reminder count when it is visible. It is the activation surface from which an Island Preview or Pinned Island opens.
+_Avoid_: Closed Island, mini popup
+
+**Collapsed Island Visibility**:
+A required per-Mac user preference choosing whether the Collapsed Island remains visible or automatically hides when idle. The available choices are Always Visible and Auto-Hide; the preference is explicitly selected during Initial Setup and can be changed later in Settings.
+_Avoid_: Island mode, display mode
+
+**Always-Visible Collapsed Island**:
+A Collapsed Island that remains visible whenever the Host Display's normal full-screen rules allow it.
+_Avoid_: Permanent Island, fixed Island
+
+**Auto-Hidden Collapsed Island**:
+A Collapsed Island whose visual surface fades out 200 milliseconds after the pointer leaves while its invisible Activation Zone remains available. It starts hidden without flashing, transitions directly to hidden when an Island Preview or Pinned Island closes, and temporarily remains visible for recovery states or while VoiceOver is active.
+_Avoid_: Disabled Island, closed Island
+
+**Activation Zone**:
+The pointer-sensitive top-center region matching the Collapsed Island's frame. While an Auto-Hidden Collapsed Island is invisible, entering the Activation Zone immediately reveals it without intercepting clicks intended for the underlying application; an interrupted edit instead restores its Pinned Island and input focus.
+_Avoid_: Invisible button, hover trap, hot corner
+
+**Initial Setup**:
+The in-Island experience in which a user must explicitly choose Collapsed Island Visibility before continuing with iCloud authorization or Local Source use. It appears for new and upgraded installations with no recorded choice; dismissing it records nothing and leaves a temporarily visible Collapsed Island from which setup can resume.
+_Avoid_: Onboarding page, setup window
+
 **Host Display**:
 The single display that currently hosts the Island. Todo Island determines it from the display containing the pointer rather than asking the user to select one.
 _Avoid_: Selected Display, main monitor, primary screen

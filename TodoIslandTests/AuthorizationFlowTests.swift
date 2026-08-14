@@ -80,6 +80,10 @@ final class AuthorizationFlowTests: XCTestCase {
   func testSuccessfulAuthorizationKeepsIslandPinnedAndLoadsFirstList() async {
     let defaults = UserDefaults(suiteName: #function)!
     defaults.removePersistentDomain(forName: #function)
+    defaults.set(
+      CollapsedIslandVisibility.alwaysVisible.rawValue,
+      forKey: "collapsed-island-visibility"
+    )
     defer { defaults.removePersistentDomain(forName: #function) }
 
     let store = AuthorizationFlowReminderStore(
