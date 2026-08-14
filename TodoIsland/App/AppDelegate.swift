@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       )
       settingsController = HostedWindowController(
         title: L10n.text("settings.title"),
-        size: NSSize(width: 520, height: 410),
+        size: NSSize(width: 520, height: 455),
         rootView: view
       )
     }

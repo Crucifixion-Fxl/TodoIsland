@@ -9,6 +9,8 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
   private let panel = IslandPanel()
   private(set) var appliedState: IslandPresentationState?
   private(set) var appliedHostDisplayID: String?
+  private(set) var isCollapsedSurfaceVisible = true
+  private(set) var isActivationZoneActive = false
   private var cancellables: Set<AnyCancellable> = []
   private var screenObserver: NSObjectProtocol?
   private var applicationDeactivationObserver: NSObjectProtocol?
@@ -17,6 +19,7 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
   private var hostDisplayTracker = HostDisplayTracker()
   private var isChangingHostDisplay = false
   private var hostDisplayTransitionGeneration = 0
+  private var visibilityTransitionGeneration = 0
 
   init(model: AppModel) {
     self.model = model
@@ -29,6 +32,11 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
     hostingView.wantsLayer = true
     hostingView.layer?.backgroundColor = NSColor.clear.cgColor
     panel.contentView = hostingView
+    let initiallyVisible = model.islandState != .collapsed || model.isCollapsedIslandVisible
+    panel.alphaValue = initiallyVisible ? 1 : 0
+    panel.ignoresMouseEvents = !initiallyVisible
+    isCollapsedSurfaceVisible = initiallyVisible
+    isActivationZoneActive = !initiallyVisible
 
     refreshHostDisplay()
 
@@ -37,6 +45,13 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
       .sink { [weak self] state in
         guard let self else { return }
         self.applyState(state: state, displayID: self.model.hostDisplayID, animated: true)
+      }
+      .store(in: &cancellables)
+
+    model.$isCollapsedIslandVisible
+      .removeDuplicates()
+      .sink { [weak self] _ in
+        self?.updateVisibility(animated: true)
       }
       .store(in: &cancellables)
 
@@ -71,13 +86,16 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
       }
     }
 
-    pointerDisplayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) {
+    pointerDisplayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) {
       [weak self] _ in
-      Task { @MainActor in self?.refreshHostDisplay() }
+      Task { @MainActor in
+        self?.refreshHostDisplay()
+        self?.refreshActivationZoneHover()
+      }
     }
 
     fullScreenTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      Task { @MainActor in self?.updateVisibility() }
+      Task { @MainActor in self?.updateVisibility(animated: false) }
     }
   }
 
@@ -145,11 +163,12 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
     let shouldFade =
       change.reason == .pointerDwell
       && panel.isVisible
+      && panel.alphaValue > 0.01
+      && shouldShowSurface(state: model.islandState)
       && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
     guard shouldFade else {
       isChangingHostDisplay = false
-      panel.alphaValue = 1
       applyState(state: model.islandState, displayID: change.displayID, animated: false)
       return
     }
@@ -163,9 +182,8 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
       Task { @MainActor in
         guard let self else { return }
         guard self.hostDisplayTransitionGeneration == transitionGeneration else {
-          self.panel.alphaValue = 1
           self.isChangingHostDisplay = false
-          self.updateVisibility()
+          self.updateVisibility(animated: false)
           return
         }
         self.applyState(state: self.model.islandState, displayID: change.displayID, animated: false)
@@ -178,7 +196,7 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
           Task { @MainActor in
             guard self?.hostDisplayTransitionGeneration == transitionGeneration else { return }
             self?.isChangingHostDisplay = false
-            self?.updateVisibility()
+            self?.updateVisibility(animated: false)
           }
         }
       }
@@ -225,7 +243,7 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
       }
       panel.orderFrontRegardless()
     }
-    updateVisibility(state: state, displayID: displayID)
+    updateVisibility(state: state, displayID: displayID, animated: animated)
   }
 
   private func windowTimingFunction(
@@ -242,24 +260,95 @@ final class IslandWindowController: NSObject, NSWindowDelegate {
     }
   }
 
-  private func updateVisibility() {
-    updateVisibility(state: model.islandState, displayID: model.hostDisplayID)
+  private func updateVisibility(animated: Bool) {
+    updateVisibility(
+      state: model.islandState,
+      displayID: model.hostDisplayID,
+      animated: animated
+    )
   }
 
-  private func updateVisibility(state: IslandPresentationState, displayID: String?) {
+  private func updateVisibility(
+    state: IslandPresentationState,
+    displayID: String?,
+    animated: Bool
+  ) {
     guard let screen = DisplaySupport.screen(id: displayID) else {
       panel.orderOut(nil)
+      isCollapsedSurfaceVisible = false
+      isActivationZoneActive = false
       return
     }
 
     if state != .pinned && DisplaySupport.shouldHideFallbackInFullScreen(screen) {
       panel.orderOut(nil)
-    } else if !panel.isVisible {
+      isCollapsedSurfaceVisible = false
+      isActivationZoneActive = false
+      return
+    }
+
+    if !panel.isVisible {
       if state == .pinned {
         panel.makeKeyAndOrderFront(nil)
       } else {
         panel.orderFrontRegardless()
       }
     }
+
+    applySurfaceVisibility(
+      shouldShowSurface(state: state),
+      animated: animated && state == .collapsed
+    )
+  }
+
+  private func shouldShowSurface(state: IslandPresentationState) -> Bool {
+    state != .collapsed
+      || model.isCollapsedIslandVisible
+      || NSWorkspace.shared.isVoiceOverEnabled
+  }
+
+  private func applySurfaceVisibility(_ visible: Bool, animated: Bool) {
+    visibilityTransitionGeneration += 1
+    let generation = visibilityTransitionGeneration
+    isCollapsedSurfaceVisible = visible
+    isActivationZoneActive = !visible && model.islandState == .collapsed
+    panel.ignoresMouseEvents = !visible
+
+    let targetAlpha: CGFloat = visible ? 1 : 0
+    guard abs(panel.alphaValue - targetAlpha) > 0.001 else {
+      panel.alphaValue = targetAlpha
+      return
+    }
+
+    guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+      panel.alphaValue = targetAlpha
+      return
+    }
+
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0.16
+      context.timingFunction = CAMediaTimingFunction(
+        name: visible ? .easeOut : .easeIn
+      )
+      panel.animator().alphaValue = targetAlpha
+    } completionHandler: { [weak self] in
+      Task { @MainActor in
+        guard let self, self.visibilityTransitionGeneration == generation else { return }
+        self.panel.alphaValue = targetAlpha
+      }
+    }
+  }
+
+  private func refreshActivationZoneHover() {
+    guard
+      model.islandState == .collapsed,
+      model.usesAutoHiddenCollapsedIsland,
+      !NSWorkspace.shared.isVoiceOverEnabled,
+      let screen = DisplaySupport.screen(id: model.hostDisplayID),
+      !DisplaySupport.shouldHideFallbackInFullScreen(screen),
+      panel.isVisible
+    else { return }
+
+    model.setIslandHovered(panel.frame.contains(NSEvent.mouseLocation))
   }
 }

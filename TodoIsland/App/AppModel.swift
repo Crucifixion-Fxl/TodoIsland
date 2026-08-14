@@ -25,6 +25,8 @@ final class AppModel: ObservableObject {
   @Published var requestedListCreationSource: ReminderSource?
   @Published private(set) var quickAddFocusRequestID = UUID()
   @Published private(set) var editingFocusRequestID = UUID()
+  @Published private(set) var collapsedIslandVisibility: CollapsedIslandVisibility?
+  @Published private(set) var isCollapsedIslandVisible: Bool
   @Published var errorMessage: String?
   @Published var activeListID: String? {
     didSet {
@@ -52,6 +54,7 @@ final class AppModel: ObservableObject {
   private enum Keys {
     static let activeListID = "active-list-id"
     static let didInitializeLocalSource = "did-initialize-local-source"
+    static let collapsedIslandVisibility = "collapsed-island-visibility"
   }
 
   init(
@@ -60,9 +63,13 @@ final class AppModel: ObservableObject {
   ) {
     self.store = store
     self.defaults = defaults
+    let savedCollapsedVisibility = defaults.string(forKey: Keys.collapsedIslandVisibility)
+      .flatMap(CollapsedIslandVisibility.init(rawValue:))
+    collapsedIslandVisibility = savedCollapsedVisibility
+    isCollapsedIslandVisible = savedCollapsedVisibility != .autoHide
     authorization = store.authorizationStatus()
     localStoreAvailability = store.localStoreAvailability
-    if authorization == .notDetermined {
+    if savedCollapsedVisibility == nil || authorization == .notDetermined {
       islandState = .pinned
     }
     activeListID = defaults.string(forKey: Keys.activeListID)
@@ -92,6 +99,8 @@ final class AppModel: ObservableObject {
     guard let activeList else { return false }
     return canAccess(source: activeList.source)
   }
+  var needsCollapsedIslandVisibilityChoice: Bool { collapsedIslandVisibility == nil }
+  var usesAutoHiddenCollapsedIsland: Bool { collapsedIslandVisibility == .autoHide }
   var nextReminder: ReminderSnapshot? { reminders.first }
   var remainingCount: Int { reminders.count }
   var canSaveEditingDraft: Bool {
@@ -106,15 +115,22 @@ final class AppModel: ObservableObject {
   func start() async {
     authorization = store.authorizationStatus()
     await reload()
-    if authorization == .notDetermined, activeList?.source != .local {
+    if needsCollapsedIslandVisibilityChoice {
+      pinIsland()
+    } else if authorization == .notDetermined, activeList?.source != .local {
       pinIsland()
     } else if activeList?.source == .local, islandState == .pinned {
       collapseIsland()
     }
+    reconcileCollapsedIslandVisibility(hideImmediately: true)
   }
 
   func requestAccess() async {
-    guard authorization == .notDetermined, !isRequestingAccess else { return }
+    guard
+      !needsCollapsedIslandVisibilityChoice,
+      authorization == .notDetermined,
+      !isRequestingAccess
+    else { return }
     isRequestingAccess = true
     defer { isRequestingAccess = false }
 
@@ -134,6 +150,7 @@ final class AppModel: ObservableObject {
     isLoading = true
     defer {
       isLoading = false
+      reconcileCollapsedIslandVisibility()
       schedulePointerExitCollapseIfNeeded()
     }
 
@@ -381,6 +398,7 @@ final class AppModel: ObservableObject {
   }
 
   func useLocal() async {
+    guard !needsCollapsedIslandVisibilityChoice else { return }
     pinIsland()
     guard localStoreAvailability == .available else {
       errorMessage = ReminderStoreError.localStoreUnavailable.localizedDescription
@@ -427,6 +445,7 @@ final class AppModel: ObservableObject {
 
     if hovering {
       guard islandState == .collapsed else { return }
+      showCollapsedIsland()
       if suspendedEditingFocus != nil {
         pinIsland()
         return
@@ -452,6 +471,7 @@ final class AppModel: ObservableObject {
 
   func pinIsland() {
     hoverTask?.cancel()
+    showCollapsedIsland()
     islandState = .pinned
     guard let suspendedEditingFocus else { return }
     self.suspendedEditingFocus = nil
@@ -475,6 +495,20 @@ final class AppModel: ObservableObject {
       cancelEditing()
     }
     islandState = .collapsed
+    reconcileCollapsedIslandVisibility(hideImmediately: true)
+  }
+
+  func setCollapsedIslandVisibility(_ visibility: CollapsedIslandVisibility) {
+    guard collapsedIslandVisibility != visibility else { return }
+    collapsedIslandVisibility = visibility
+    defaults.set(visibility.rawValue, forKey: Keys.collapsedIslandVisibility)
+
+    switch visibility {
+    case .alwaysVisible:
+      showCollapsedIsland()
+    case .autoHide:
+      reconcileCollapsedIslandVisibility()
+    }
   }
 
   func setHostDisplayID(_ displayID: String?) {
@@ -504,26 +538,39 @@ final class AppModel: ObservableObject {
   }
 
   private func schedulePointerExitCollapseIfNeeded() {
-    guard !isPointerInsideIsland, shouldCollapseAfterPointerExit else { return }
-    let delay: Duration = islandState == .pinned ? .milliseconds(200) : .milliseconds(500)
+    guard !isPointerInsideIsland else { return }
+
+    let delay: Duration
+    switch islandState {
+    case .collapsed:
+      guard canAutoHideCollapsedIsland else { return }
+      delay = .milliseconds(200)
+    case .preview:
+      delay = .milliseconds(500)
+    case .pinned:
+      guard canUseActiveList else { return }
+      delay = .milliseconds(200)
+    }
+
     hoverTask?.cancel()
     hoverTask = Task {
       try? await Task.sleep(for: delay)
       guard
         !Task.isCancelled,
-        !isPointerInsideIsland,
-        shouldCollapseAfterPointerExit
+        !isPointerInsideIsland
       else { return }
-      if islandState == .pinned {
-        suspendPinnedIsland()
-      } else {
+
+      switch islandState {
+      case .collapsed:
+        guard canAutoHideCollapsedIsland else { return }
+        isCollapsedIslandVisible = false
+      case .preview:
         collapseIsland()
+      case .pinned:
+        guard canUseActiveList else { return }
+        suspendPinnedIsland()
       }
     }
-  }
-
-  private var shouldCollapseAfterPointerExit: Bool {
-    islandState == .preview || (islandState == .pinned && canUseActiveList)
   }
 
   private func suspendPinnedIsland() {
@@ -539,6 +586,40 @@ final class AppModel: ObservableObject {
 
     isQuickAddActive = false
     islandState = .collapsed
+    reconcileCollapsedIslandVisibility(hideImmediately: true)
+  }
+
+  private var canAutoHideCollapsedIsland: Bool {
+    usesAutoHiddenCollapsedIsland && canUseActiveList
+  }
+
+  private func showCollapsedIsland() {
+    hoverTask?.cancel()
+    isCollapsedIslandVisible = true
+  }
+
+  private func reconcileCollapsedIslandVisibility(hideImmediately: Bool = false) {
+    guard islandState == .collapsed else {
+      isCollapsedIslandVisible = true
+      return
+    }
+
+    guard canAutoHideCollapsedIsland else {
+      isCollapsedIslandVisible = true
+      return
+    }
+
+    guard !isPointerInsideIsland else {
+      isCollapsedIslandVisible = true
+      return
+    }
+
+    if hideImmediately {
+      hoverTask?.cancel()
+      isCollapsedIslandVisible = false
+    } else {
+      schedulePointerExitCollapseIfNeeded()
+    }
   }
 
   private func removeCompletedReminder(id: String) {

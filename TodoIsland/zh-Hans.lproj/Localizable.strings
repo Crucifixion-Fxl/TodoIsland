@@ -19,6 +19,14 @@
 "island.all-done" = "全部完成";
 "island.collapsed.accessibility" = "列表：%@。还有 %d 项未完成。";
 
+"setup.visibility.title" = "选择折叠灵动岛的显示方式";
+"setup.visibility.detail" = "后续可以随时在设置中更改。";
+"setup.visibility.always-visible" = "常驻显示";
+"setup.visibility.always-visible.detail" = "折叠灵动岛始终保持可见。";
+"setup.visibility.auto-hide" = "自动隐藏";
+"setup.visibility.auto-hide.detail" = "鼠标离开后隐藏，移到屏幕顶部中央即可唤醒。";
+"setup.visibility.choose-first" = "请选择一种显示方式后继续。";
+
 "list.none" = "没有列表";
 "list.switch" = "切换提醒事项列表";
 "list.no-icloud" = "没有 iCloud 列表";
@@ -93,6 +101,8 @@
 "settings.reminders" = "iCloud 提醒事项";
 "settings.permission" = "权限";
 "settings.island" = "灵动岛";
+"settings.collapsed-island" = "折叠灵动岛";
+"settings.complete-in-island" = "在灵动岛中完成首次设置";
 "settings.fullscreen" = "全屏";
 "settings.fullscreen.policy" = "隐藏折叠胶囊，主动打开的灵动岛仍可显示";
 "settings.launch-at-login" = "登录时启动";

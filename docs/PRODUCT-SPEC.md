@@ -25,6 +25,7 @@ The product:
 - creates, edits, completes, and deletes Reminders;
 - edits title, optional Due Date and optional time, and Priority;
 - can present and complete existing Recurring Reminders but cannot edit their repetition rules;
+- requires an explicit per-Mac choice between an Always-Visible and Auto-Hidden Collapsed Island during Initial Setup, and allows that choice to be changed later in Settings;
 - restores the last valid Active List and otherwise prefers iCloud; and
 - does not move or copy Reminders between lists or sources.
 
@@ -49,17 +50,26 @@ Within those groups, Reminders are ordered by due time, Priority, and title. The
 
 ### Collapsed Island
 
-On a display with a physical notch, a small cloud or Mac source glyph and the Active List name appear on the left side, while an 18-point green outline circle containing its Pending Reminder count in blue appears on the right. The text and count circle use matching outer insets so the Collapsed Island is visually symmetrical. On a display without a notch, the same information appears in a centered black capsule. The glyph distinguishes sources without adding a full source label to the collapsed surface.
+On a display with a physical notch, a small cloud or Mac source glyph and the Active List name appear on the left side, while an 18-point green outline circle containing its Pending Reminder count in green appears on the right. The text and count circle use matching outer insets so the Collapsed Island is visually symmetrical. On a display without a notch, the same information appears in a centered black capsule. The glyph distinguishes sources without adding a full source label to the collapsed surface.
+
+Collapsed Island Visibility is a required per-Mac preference with no preselected value during Initial Setup:
+
+- **Always Visible** keeps the Collapsed Island visible whenever its normal Host Display and full-screen rules permit it.
+- **Auto-Hide** completely hides the visual surface while preserving an Activation Zone matching the Collapsed Island's exact frame. The invisible Activation Zone observes pointer position without intercepting clicks intended for the underlying application.
+
+For an ordinary Active List, including All Done, Auto-Hide waits 200 milliseconds after the pointer leaves and then fades the Collapsed Island out over approximately 160 milliseconds. Entering its Activation Zone immediately fades it in over approximately 160 milliseconds; remaining there for the existing 200-millisecond dwell continues into an Island Preview. Reduce Motion replaces these fades with immediate visibility changes.
+
+Initial Setup, Locked iCloud Source, no-list recovery, and Local-store recovery remain visible. Auto-Hide is also temporarily suppressed while VoiceOver is active without changing the saved preference. Background Reminder changes never reveal a hidden Island; current content appears the next time it opens.
 
 ### Island Preview
 
-Hovering briefly over the Collapsed Island expands an Island Preview without taking focus from the current application. The Preview shows the Active List's Pending Reminders and supports pointer-based actions such as switching lists and completing a Reminder. Quick Add uses the same bottom input as the Pinned Island; clicking it pins the Island and focuses the field. The Preview closes 500 milliseconds after the pointer leaves.
+Hovering for 200 milliseconds over the Collapsed Island expands an Island Preview without taking focus from the current application. The Preview shows the Active List's Pending Reminders and supports pointer-based actions such as switching lists and completing a Reminder. Quick Add uses the same bottom input as the Pinned Island; clicking it pins the Island and focuses the field. The Preview closes 500 milliseconds after the pointer leaves. With Auto-Hide selected, it transitions directly to a hidden Collapsed Island without briefly rendering the collapsed surface.
 
 The nominal Preview size is 440 by 260 points so the All Done state and Quick Add remain fully visible together. It still remains smaller than the Pinned Island and adapts down for shorter displays.
 
 ### Pinned Island
 
-Clicking the Island opens or converts it to a Pinned Island. The Pinned Island can become key and accepts keyboard input. When it has an Active List, it collapses 200 milliseconds after the pointer leaves; returning within that interval cancels the collapse. If Quick Add or a Reminder editor is unfinished, the collapse preserves its draft, and returning the pointer immediately reopens the Pinned Island and restores the corresponding field focus. A submitted Quick Add ends its editing session, so the next pointer return follows the normal Preview behavior. Locked and no-list recovery states remain open. The header has no separate close button.
+Clicking the Island opens or converts it to a Pinned Island. The Pinned Island can become key and accepts keyboard input. When it has an Active List, it collapses 200 milliseconds after the pointer leaves; returning within that interval cancels the collapse. With Auto-Hide selected, it transitions directly to a hidden Collapsed Island without briefly rendering the collapsed surface. If Quick Add or a Reminder editor is unfinished, the collapse preserves its draft, and returning to the Activation Zone immediately reopens the Pinned Island and restores the corresponding field focus. A submitted Quick Add ends its editing session, so the next pointer return follows the normal Preview behavior. Locked and no-list recovery states remain open. The header has no separate close button.
 
 - `Escape` cancels an active edit or closes the Island.
 - Clicking outside closes the Island.
@@ -107,7 +117,7 @@ The Island uses a black surface, white primary text, and gray secondary text. Th
 
 The application icon is an original black notch silhouette with a colored checkmark. The implementation must not copy boring.notch artwork or source code.
 
-Todo Island supports VoiceOver, keyboard navigation, increased contrast where applicable, and Reduce Motion. Reduce Motion replaces geometry-heavy spring transitions with restrained fades or immediate state changes.
+Todo Island supports VoiceOver, keyboard navigation, increased contrast where applicable, and Reduce Motion. Reduce Motion replaces geometry-heavy spring transitions with restrained fades or immediate state changes. VoiceOver temporarily keeps the Collapsed Island visible even when Auto-Hide is selected; the menu-bar Open Island action remains an accessible path and no new global shortcut is introduced.
 
 ## Displays and Full Screen
 
@@ -117,12 +127,14 @@ Whenever Host Display detection runs, the display containing the mouse pointer i
 
 While the Island is collapsed, the pointer must remain on a different display for approximately 350 milliseconds before that display becomes the Host Display. Brief boundary crossings do not move the Island. An Island Preview or Pinned Island locks its Host Display until it collapses, at which point detection resumes.
 
+An Auto-Hidden Collapsed Island's Activation Zone follows the same Host Display selection and migration rules. It does not create a second Island or a fixed trigger on the built-in display.
+
 If the Host Display is disconnected, the Island immediately moves to the pointer's remaining display. This forced migration preserves the current presentation state, editing draft, and keyboard focus.
 
 A normal collapsed Host Display change uses a brief fade out on the old display and fade in on the new display. With Reduce Motion enabled, the Island changes displays immediately.
 
 - On a physical-notch display, the Island remains available in full-screen spaces.
-- On a display without a notch, the collapsed fallback capsule hides while an application is full screen. That display remains the Host Display, and the capsule returns when full screen ends.
+- On a display without a notch, the collapsed fallback capsule hides while an application is full screen. That display remains the Host Display, and neither the capsule nor an Auto-Hide Activation Zone is available until full screen ends.
 - A first-launch authorization Island or a Pinned Island explicitly opened by the user can appear above a full-screen application. When it collapses, the normal hiding rule resumes.
 - Screen attachment, removal, resolution changes, and Host Display changes recalculate the Island geometry.
 
@@ -138,7 +150,9 @@ Todo Island is an accessory application with no Dock icon. Its menu-bar icon ope
 
 Settings contains:
 
-- Reminders authorization status and an Open System Settings action;
+- Reminders authorization status and the appropriate in-Island authorization or Open System Settings action;
+- Local Source storage status and recovery actions;
+- a Collapsed Island segmented control labeled `Always Visible` and `Auto-Hide` in English and `常驻显示` and `自动隐藏` in Simplified Chinese;
 - Launch at Login;
 - full-screen hiding behavior;
 - About; and
@@ -150,11 +164,19 @@ Launch at Login is disabled by default.
 
 The Local Source remains usable without Apple Reminders access. Authorization controls only the iCloud Source.
 
-On first launch, Todo Island opens a Pinned Island with iCloud selected by default. It explains why full Reminders access is required for iCloud, states that Reminder content stays on the device, and offers Allow Access and Use Local actions. The application does not use a separate onboarding window. The macOS authorization prompt remains a system-owned surface triggered by Allow Access.
+On first launch, Todo Island opens a Pinned Initial Setup Island. Its Collapsed Island Visibility section presents two unselected cards: `Always Visible — Keep the Collapsed Island visible.` and `Auto-Hide — Hide it when the pointer leaves; move to the top center to reveal it.` In Simplified Chinese they read `常驻显示：折叠灵动岛始终保持可见` and `自动隐藏：鼠标离开后隐藏，移到屏幕顶部中央即可唤醒`. The user must select one before the Allow Access and Use Local actions become available.
 
-If access is granted, the same Pinned Island immediately replaces its authorization content with the Active List and its Reminders. If access is denied or restricted, only the iCloud Source is locked and offers Open System Settings; the list menu and Use Local action remain available. Settings retains the iCloud authorization status and the same recovery action. The application does not repeatedly prompt.
+After the visibility choice, Initial Setup explains why full Reminders access is required for iCloud, states that Reminder content stays on the device, and offers Allow Access and Use Local actions with iCloud selected by default. The application does not use a separate setup window. The macOS authorization prompt remains a system-owned surface triggered by Allow Access.
 
-The user may dismiss the first-launch authorization Island with Escape or by clicking outside it. The Island then remains available in its collapsed state and can be reopened to authorize iCloud or use Local. Dismissing it does not quit the application.
+An existing installation with no saved Collapsed Island Visibility choice presents the required choice once after upgrading. If its current source and authorization are already usable, only the new visibility choice is shown. If recovery is required, its existing recovery controls resume immediately after the choice. The app does not repeat previously completed source setup.
+
+The visibility choice is saved independently from Reminder Source and authorization. If access is granted, the same Pinned Island immediately replaces its authorization content with the Active List and its Reminders. If access is denied or restricted, the visibility choice remains saved, only the iCloud Source is locked, and Open System Settings plus Use Local remain available. Resetting authorization, reauthorizing, or switching between iCloud and Local does not ask for the visibility choice again. The application does not repeatedly prompt.
+
+The user may dismiss Initial Setup with Escape or by clicking outside it before choosing visibility. No choice is recorded; the Collapsed Island remains temporarily visible and reopens Initial Setup on the next interaction or launch. Dismissing it does not quit the application.
+
+After Auto-Hide has been selected, an ordinary subsequent launch starts with the Collapsed Island already hidden and does not flash it first. If the pointer is already within the Activation Zone, it is revealed immediately. The menu-bar Open Island action always opens a Pinned Island; no global keyboard shortcut is added.
+
+Changing Collapsed Island Visibility in Settings saves and applies it immediately. Selecting Always Visible reveals a hidden Collapsed Island immediately. Selecting Auto-Hide while the pointer is outside waits 200 milliseconds before hiding, but never dismisses an Island Preview or Pinned Island currently in use; the new preference takes effect when that Island next collapses.
 
 After launch, the app restores the last valid Active List. If it is unavailable or none has been saved, the app automatically uses the first available iCloud Reminder List, then a Local Reminder List. The user can switch the Active List from within the Island.
 
@@ -214,6 +236,8 @@ The Island shell is an independent implementation informed by boring.notch's pub
 - Active List switching, Quick Add, compact editing, 200-millisecond completion feedback, and confirmed deletion work.
 - External Reminders changes appear after EventKit change notifications.
 - Collapsed, Preview, and Pinned states follow the agreed focus behavior and shortcuts.
+- Initial Setup requires an explicit visibility choice, upgrade prompting preserves existing source state, and Settings can change the per-Mac choice.
+- Auto-Hide preserves click-through Activation Zone behavior, exact exit and reveal timing, draft restoration, recovery-state visibility, and VoiceOver and Reduce Motion exceptions.
 - Physical-notch and no-notch layouts are manually checked on available displays.
 - Full-screen and display-configuration behavior is manually checked.
 - English and Simplified Chinese layouts are checked for truncation.

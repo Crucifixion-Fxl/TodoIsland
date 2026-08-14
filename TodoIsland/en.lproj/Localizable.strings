@@ -19,6 +19,14 @@
 "island.all-done" = "All Done";
 "island.collapsed.accessibility" = "List: %@. %d reminders remaining.";
 
+"setup.visibility.title" = "Choose Collapsed Island Visibility";
+"setup.visibility.detail" = "You can change this later in Settings.";
+"setup.visibility.always-visible" = "Always Visible";
+"setup.visibility.always-visible.detail" = "Keep the Collapsed Island visible.";
+"setup.visibility.auto-hide" = "Auto-Hide";
+"setup.visibility.auto-hide.detail" = "Hide it when the pointer leaves; move to the top center to reveal it.";
+"setup.visibility.choose-first" = "Choose one option to continue.";
+
 "list.none" = "No List";
 "list.switch" = "Switch reminder list";
 "list.no-icloud" = "No iCloud Lists";
@@ -93,6 +101,8 @@
 "settings.reminders" = "iCloud Reminders";
 "settings.permission" = "Permission";
 "settings.island" = "Island";
+"settings.collapsed-island" = "Collapsed Island";
+"settings.complete-in-island" = "Complete Initial Setup in Island";
 "settings.fullscreen" = "Full Screen";
 "settings.fullscreen.policy" = "Hide the collapsed fallback capsule; allow explicitly opened Islands";
 "settings.launch-at-login" = "Launch at Login";

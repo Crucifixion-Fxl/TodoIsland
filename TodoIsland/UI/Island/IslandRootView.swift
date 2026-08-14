@@ -232,7 +232,9 @@ struct IslandRootView: View {
       header
       Divider().overlay(.white.opacity(0.12))
 
-      if model.requestedListCreationSource != nil {
+      if model.needsCollapsedIslandVisibilityChoice {
+        initialSetupContent
+      } else if model.requestedListCreationSource != nil {
         listCreationForm
       } else if listPendingRename != nil {
         listRenameForm
@@ -252,7 +254,8 @@ struct IslandRootView: View {
         lockedContent
       }
 
-      if model.islandState.showsQuickAdd && model.canUseActiveList
+      if !model.needsCollapsedIslandVisibilityChoice
+        && model.islandState.showsQuickAdd && model.canUseActiveList
         && model.requestedListCreationSource == nil && listPendingRename == nil
       {
         quickAdd
@@ -368,6 +371,7 @@ struct IslandRootView: View {
       }
       .menuStyle(.borderlessButton)
       .accessibilityLabel(Text("list.switch"))
+      .disabled(model.needsCollapsedIslandVisibilityChoice)
 
       Spacer()
 
@@ -404,6 +408,81 @@ struct IslandRootView: View {
     } else {
       SystemSettings.openRemindersPrivacy()
     }
+  }
+
+  private var initialSetupContent: some View {
+    VStack(spacing: 14) {
+      Image(systemName: "macwindow")
+        .font(.system(size: 30, weight: .semibold))
+        .foregroundStyle(accentColor)
+
+      VStack(spacing: 5) {
+        Text("setup.visibility.title")
+          .font(.headline)
+        Text("setup.visibility.detail")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+      }
+
+      HStack(spacing: 12) {
+        visibilityCard(
+          .alwaysVisible,
+          titleKey: "setup.visibility.always-visible",
+          detailKey: "setup.visibility.always-visible.detail",
+          symbol: "eye.fill"
+        )
+        visibilityCard(
+          .autoHide,
+          titleKey: "setup.visibility.auto-hide",
+          detailKey: "setup.visibility.auto-hide.detail",
+          symbol: "eye.slash.fill"
+        )
+      }
+
+      Text("setup.visibility.choose-first")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(20)
+  }
+
+  private func visibilityCard(
+    _ visibility: CollapsedIslandVisibility,
+    titleKey: LocalizedStringKey,
+    detailKey: LocalizedStringKey,
+    symbol: String
+  ) -> some View {
+    Button {
+      model.setCollapsedIslandVisibility(visibility)
+    } label: {
+      VStack(spacing: 8) {
+        Image(systemName: symbol)
+          .font(.system(size: 20, weight: .semibold))
+          .foregroundStyle(accentColor)
+        Text(titleKey)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(.primary)
+        Text(detailKey)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, minHeight: 112)
+      .padding(.horizontal, 10)
+      .background(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .fill(.white.opacity(0.075))
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .stroke(.white.opacity(0.16), lineWidth: 1)
+      )
+      .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+    .buttonStyle(.plain)
   }
 
   @ViewBuilder
@@ -1251,6 +1330,12 @@ struct IslandRootView: View {
 
   private func handleKeyEvent(_ event: NSEvent) -> Bool {
     guard isPinned else { return false }
+
+    if model.needsCollapsedIslandVisibilityChoice {
+      guard event.keyCode == 53 else { return false }
+      model.collapseIsland()
+      return true
+    }
 
     if event.modifierFlags.contains(.command),
       event.charactersIgnoringModifiers?.lowercased() == "n"
