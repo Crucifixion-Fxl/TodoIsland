@@ -19,7 +19,6 @@ struct IslandRootView: View {
   @State private var reminderPendingDeletion: ReminderSnapshot?
   @State private var listPendingRename: ReminderListSnapshot?
   @State private var listNameDraft = ""
-  @State private var focusQuickAddAfterPinning = false
 
   private var isPinned: Bool { model.islandState == .pinned }
 
@@ -139,11 +138,7 @@ struct IslandRootView: View {
         if state == .collapsed {
           quickAddFocused = false
           editorTitleFocused = false
-          return
         }
-        guard state == .pinned, focusQuickAddAfterPinning else { return }
-        focusQuickAddAfterPinning = false
-        Task { @MainActor in quickAddFocused = true }
       }
     }
   }
@@ -809,6 +804,17 @@ struct IslandRootView: View {
         .focused($quickAddFocused)
         .onSubmit { submitQuickAdd() }
         .accessibilityLabel(Text("quick-add.accessibility"))
+        .accessibilityHidden(!isPinned)
+        .overlay {
+          if !isPinned {
+            Button(action: focusQuickAdd) {
+              Color.clear
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("quick-add.accessibility"))
+          }
+        }
       Button {
         submitQuickAdd()
       } label: {
@@ -822,12 +828,6 @@ struct IslandRootView: View {
     .padding(.horizontal, 10)
     .frame(height: 38)
     .background(RoundedRectangle(cornerRadius: 11).fill(.white.opacity(0.08)))
-    .contentShape(Rectangle())
-    .simultaneousGesture(
-      TapGesture().onEnded {
-        focusQuickAdd()
-      }
-    )
   }
 
   private func submitQuickAdd() {
@@ -858,12 +858,7 @@ struct IslandRootView: View {
   }
 
   private func focusQuickAdd() {
-    if isPinned {
-      quickAddFocused = true
-    } else {
-      focusQuickAddAfterPinning = true
-      model.pinIsland()
-    }
+    model.activateQuickAdd()
   }
 
   private var listCreationForm: some View {

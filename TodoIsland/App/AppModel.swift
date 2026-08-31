@@ -469,6 +469,11 @@ final class AppModel: ObservableObject {
     isQuickAddActive = active
   }
 
+  func activateQuickAdd() {
+    pinIsland()
+    quickAddFocusRequestID = UUID()
+  }
+
   func pinIsland() {
     hoverTask?.cancel()
     showCollapsedIsland()
